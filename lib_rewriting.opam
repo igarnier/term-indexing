@@ -1,0 +1,16 @@
+opam-version: "2.0"
+maintainer: "igarnier@protonmail.com"
+authors: ["Ilias Garnier"]
+homepage: "https://gitlab.com/igarnier/term_rewriting"
+bug-reports: "https://gitlab.com/igarnier/term_rewriting/issues"
+dev-repo: "git+https://gitlab.com/igarnier/term_rewriting.git"
+license: "MIT"
+depends: [
+  "ocaml" { >= "4.14.1" }
+  "dune" { >= "3.0" }
+  "hashcons" { >= "1.4.0" }
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+synopsis: "Library for term rewriting"

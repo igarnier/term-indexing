@@ -1,0 +1,4 @@
+(tests
+ (names rewriting_test term_test)
+ (libraries lib_rewriting qcheck-alcotest)
+ )
