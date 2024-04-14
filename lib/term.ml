@@ -34,8 +34,7 @@ let rec fold f acc term path =
 and fold_subterms f acc subterms path i =
   if i = Array.length subterms then acc
   else
-    let path = Path.at_index i path in
-    let acc = fold f acc subterms.(i) path in
+    let acc = fold f acc subterms.(i) (Path.at_index i path) in
     fold_subterms f acc subterms path (i + 1)
 
 let fold f acc term = fold f acc term Path.root
@@ -63,17 +62,25 @@ module type S = sig
 
   type t = prim term
 
+  val equal : t -> t -> bool
+
+  val hash : t -> int
+
   val prim : prim -> t array -> t
+
+  val var : int -> t
 
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
-  val fold_variables : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
+  val fold_variables : (int -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
   val get_subterm_fwd : 'a term -> Path.forward -> 'a term
 
   val get_subterm : 'a term -> Path.t -> 'a term
 
   val subst : term:t -> path:Path.t -> replacement:t -> t
+
+  val canon : t -> int Int_map.t * t
 
   val pp : Format.formatter -> t -> unit
 end
@@ -101,6 +108,10 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
 
   let table = Hcons.create 1024
 
+  let equal (t1 : t) (t2 : t) = t1 == t2
+
+  let hash t = t.Hashcons.hkey
+
   let prim head subterms =
     if Array.length subterms <> X.arity head then
       Format.kasprintf
@@ -112,6 +123,9 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
         (X.arity head)
     else Hcons.hashcons table (Prim (head, subterms))
 
+  let var i = prim (X.var i) [||]
+
+  (* re-export generic fold *)
   let fold = fold
 
   let fold_variables f acc term =
@@ -119,12 +133,14 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
       (fun term path acc ->
         match X.is_var (get_prim term) with
         | None -> acc
-        | Some _ -> f term path acc)
+        | Some var -> f var path acc)
       acc
       term
 
+  (* re-export generic get_subterm_fwd *)
   let get_subterm_fwd = get_subterm_fwd
 
+  (* re-export generic get_subterm *)
   let get_subterm = get_subterm
 
   let rec subst_aux : term:t -> path:Path.forward -> replacement:t -> t =
@@ -147,5 +163,36 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
     let path = Path.reverse path in
     subst_aux ~term ~path ~replacement
 
+  (* TODO optim: consider using an extensible array from int to int instead of an Int_map.t *)
+  let canon : t -> int Int_map.t * t =
+   fun term ->
+    let (map, result, _) =
+      fold_variables
+        (fun v path (canon_map, canon_term, counter) ->
+          match Int_map.find_opt v canon_map with
+          | None ->
+              let canon_v = counter in
+              let canon_map = Int_map.add v counter canon_map in
+              let canon_term =
+                if Int.equal v canon_v then
+                  (* We avoid doing any trivial rewrites. *)
+                  canon_term
+                else subst ~term:canon_term ~path ~replacement:(var canon_v)
+              in
+              (canon_map, canon_term, counter + 1)
+          | Some canon_v ->
+              let canon_term =
+                if Int.equal v canon_v then
+                  (* We avoid doing any trivial rewrites. *)
+                  canon_term
+                else subst ~term:canon_term ~path ~replacement:(var canon_v)
+              in
+              (canon_map, canon_term, counter))
+        (Int_map.empty, term, 0)
+        term
+    in
+    (map, result)
+
+  (* re-export pretty-printer *)
   let pp fmtr term = pp X.pp fmtr term
 end

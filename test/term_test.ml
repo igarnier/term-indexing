@@ -17,4 +17,51 @@ let fold_lexicographic =
       in
       paths_sorted_lexicographically = sort)
 
-let () = Alcotest.run "term" [("fold_lexicographic", conv [fold_lexicographic])]
+let fold_variables =
+  Alcotest.test_case "fold_variables" `Quick (fun () ->
+      let term = Expr.(add (var 0) (var 1)) in
+      let vars =
+        Expr.fold_variables
+          (fun var path acc -> (Path.reverse path, var) :: acc)
+          []
+          term
+      in
+      let expected = [([1], 1); ([0], 0)] in
+      Alcotest.(check (list (pair (list int) int))) "variables" expected vars)
+
+let canon_variable_count =
+  QCheck2.Test.make
+    ~name:"canon_variable_count"
+    ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
+    ~count:100
+    Arith.gen
+    (fun term ->
+      let vars =
+        Expr.fold_variables (fun var _path acc -> var :: acc) [] term
+        |> List.sort_uniq Int.compare |> List.length
+      in
+      let (_, canon) = Expr.canon term in
+      let canon_vars =
+        Expr.fold_variables (fun var _path acc -> var :: acc) [] canon
+        |> List.sort_uniq Int.compare |> List.length
+      in
+      Int.equal vars canon_vars)
+
+let canon_idempotent =
+  QCheck2.Test.make
+    ~name:"canon_idempotent"
+    ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
+    ~count:100
+    Arith.gen
+    (fun term ->
+      let (_, canon) = Expr.canon term in
+      let (_, canon') = Expr.canon canon in
+      Format.printf "%a -> %a -> %a@." Expr.pp term Expr.pp canon Expr.pp canon' ;
+      Expr.equal canon canon')
+
+let () =
+  Alcotest.run
+    "term"
+    [ ("fold_lexicographic", conv [fold_lexicographic]);
+      ("fold_variables", [fold_variables]);
+      ("canon", conv [canon_variable_count; canon_idempotent]) ]

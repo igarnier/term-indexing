@@ -19,6 +19,8 @@ module Prim = struct
 
   let arity = function Add | Sub | Mul | Div -> 2 | Var _ | Float _ -> 0
 
+  let var i = Var i
+
   let is_var = function Var id -> Some id | _ -> None
 end
 

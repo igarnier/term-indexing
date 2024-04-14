@@ -18,6 +18,9 @@ module type S = sig
   (** [arity s] is the arity of [s], i.e. a term with head [s] must have exactly [arity s] sub-terms. *)
   val arity : t -> int
 
+  (** [var s] creates a symbol corresponding to the variable [s]. *)
+  val var : int -> t
+
   (** [is_var s] is [Some n] if [s] is a variable equal to [n], and [None] otherwise. *)
   val is_var : t -> int option
 end
