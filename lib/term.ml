@@ -40,6 +40,24 @@ and fold_subterms f acc subterms path i =
 
 let fold f acc term = fold f acc term Path.root
 
+exception Get_subterm_oob of Path.forward * int
+
+let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
+ fun term path ->
+  match path with
+  | [] -> term
+  | index :: l -> (
+      match term.Hashcons.node with
+      | Prim (_, subterms) ->
+          let len = Array.length subterms in
+          if index >= len then raise (Get_subterm_oob (path, len))
+          else get_subterm_fwd subterms.(index) l)
+
+let get_subterm : 'prim term -> Path.t -> 'prim term =
+ fun term path ->
+  let path = Path.reverse path in
+  get_subterm_fwd term path
+
 module type S = sig
   type prim
 
@@ -50,6 +68,12 @@ module type S = sig
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
   val fold_variables : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
+
+  val get_subterm_fwd : 'a term -> Path.forward -> 'a term
+
+  val get_subterm : 'a term -> Path.t -> 'a term
+
+  val subst : term:t -> path:Path.t -> replacement:t -> t
 
   val pp : Format.formatter -> t -> unit
 end
@@ -98,6 +122,30 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
         | Some _ -> f term path acc)
       acc
       term
+
+  let get_subterm_fwd = get_subterm_fwd
+
+  let get_subterm = get_subterm
+
+  let rec subst_aux : term:t -> path:Path.forward -> replacement:t -> t =
+   fun ~term ~path ~replacement ->
+    match path with
+    | [] -> replacement
+    | index :: l -> (
+        match term.Hashcons.node with
+        | Prim (s, subterms) -> prim s (subst_at subterms index l replacement))
+
+  and subst_at : t array -> int -> Path.forward -> t -> t array =
+   fun subterms index path replacement ->
+    Array.mapi
+      (fun i term ->
+        if i = index then subst_aux ~term ~path ~replacement else term)
+      subterms
+
+  let subst : term:t -> path:Path.t -> replacement:t -> t =
+   fun ~term ~path ~replacement ->
+    let path = Path.reverse path in
+    subst_aux ~term ~path ~replacement
 
   let pp fmtr term = pp X.pp fmtr term
 end

@@ -22,7 +22,6 @@ let rec pp_native fmtr (term : native) =
 (* -------------------- *)
 
 module Patt = Pattern.Make_with_hash_consing (Prim) (Expr)
-module Rewrite = Rewrite.Make (Prim) (Expr) (Patt)
 
 let add x y = Expr.prim Add [| x; y |]
 
@@ -60,13 +59,13 @@ let pattern =
   focus @@ prim Prim.Mul (any @. add_pattern @. list_empty)
 
 let rewrite_at term path =
-  let target = Rewrite.get_subterm ~term ~path in
+  let target = Expr.get_subterm term path in
   match target.Hashcons.node with
   | Prim
       (Prim.Mul, [| something; { node = Prim (Prim.Add, [| lhs; rhs |]); _ } |])
     ->
       let replacement = add (mul something lhs) (mul something rhs) in
-      Rewrite.subst ~term ~path ~replacement
+      Expr.subst ~term ~path ~replacement
   | _ -> assert false
 
 (* -------------------- *)
@@ -80,7 +79,7 @@ let () = Format.eprintf "%a@." pp_native (to_native expression)
 (* Matches are produced in a depth-first fashion, hence matches
    closer to the root are closer to the beginning of the list of
    matches. *)
-let matches = Rewrite.all_matches pattern expression
+let matches = Patt.all_matches pattern expression
 
 let () =
   List.iter (fun path -> Format.printf "%s@." (Path.to_string path)) matches
