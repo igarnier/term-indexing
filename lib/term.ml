@@ -70,6 +70,8 @@ module type S = sig
 
   val var : int -> t
 
+  val is_var : t -> int option
+
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
   val fold_variables : (int -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
@@ -124,6 +126,9 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
     else Hcons.hashcons table (Prim (head, subterms))
 
   let var i = prim (X.var i) [||]
+
+  let is_var term =
+    match term.Hashcons.node with Prim (p, [||]) -> X.is_var p | _ -> None
 
   (* re-export generic fold *)
   let fold = fold
