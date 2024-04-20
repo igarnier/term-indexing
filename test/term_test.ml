@@ -29,6 +29,10 @@ let fold_variables =
       let expected = [([1], 1); ([0], 0)] in
       Alcotest.(check (list (pair (list int) int))) "variables" expected vars)
 
+let ints () =
+  let dispenser = Seq.to_dispenser (Seq.ints 0) in
+  fun () -> Option.get (dispenser ())
+
 let canon_variable_count =
   QCheck2.Test.make
     ~name:"canon_variable_count"
@@ -40,7 +44,7 @@ let canon_variable_count =
         Expr.fold_variables (fun var _path acc -> var :: acc) [] term
         |> List.sort_uniq Int.compare |> List.length
       in
-      let (_, canon) = Expr.canon term in
+      let (_, canon) = Expr.canon term (ints ()) in
       let canon_vars =
         Expr.fold_variables (fun var _path acc -> var :: acc) [] canon
         |> List.sort_uniq Int.compare |> List.length
@@ -54,8 +58,8 @@ let canon_idempotent =
     ~count:100
     Arith.gen
     (fun term ->
-      let (_, canon) = Expr.canon term in
-      let (_, canon') = Expr.canon canon in
+      let (_, canon) = Expr.canon term (ints ()) in
+      let (_, canon') = Expr.canon canon (ints ()) in
       Format.printf "%a -> %a -> %a@." Expr.pp term Expr.pp canon Expr.pp canon' ;
       Expr.equal canon canon')
 

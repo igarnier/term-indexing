@@ -82,7 +82,7 @@ module type S = sig
 
   val subst : term:t -> path:Path.t -> replacement:t -> t
 
-  val canon : t -> int Int_map.t * t
+  val canon : t -> (unit -> int) -> int Int_map.t * t
 
   val pp : Format.formatter -> t -> unit
 end
@@ -169,34 +169,33 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
     subst_aux ~term ~path ~replacement
 
   (* TODO optim: consider using an extensible array from int to int instead of an Int_map.t *)
-  let canon : t -> int Int_map.t * t =
-   fun term ->
-    let (map, result, _) =
-      fold_variables
-        (fun v path (canon_map, canon_term, counter) ->
-          match Int_map.find_opt v canon_map with
-          | None ->
-              let canon_v = counter in
-              let canon_map = Int_map.add v counter canon_map in
-              let canon_term =
-                if Int.equal v canon_v then
-                  (* We avoid doing any trivial rewrites. *)
-                  canon_term
-                else subst ~term:canon_term ~path ~replacement:(var canon_v)
-              in
-              (canon_map, canon_term, counter + 1)
-          | Some canon_v ->
-              let canon_term =
-                if Int.equal v canon_v then
-                  (* We avoid doing any trivial rewrites. *)
-                  canon_term
-                else subst ~term:canon_term ~path ~replacement:(var canon_v)
-              in
-              (canon_map, canon_term, counter))
-        (Int_map.empty, term, 0)
-        term
-    in
-    (map, result)
+  (* TODO optim: this algorithm is potentially quadratic as we perform rewrites on-the-fly. We
+     could batch those rewrites and perform them in one go. *)
+  let canon : t -> (unit -> int) -> int Int_map.t * t =
+   fun term enum ->
+    fold_variables
+      (fun v path (canon_map, canon_term) ->
+        match Int_map.find_opt v canon_map with
+        | None ->
+            let canon_v = enum () in
+            let canon_map = Int_map.add v canon_v canon_map in
+            let canon_term =
+              if Int.equal v canon_v then
+                (* We avoid doing any trivial rewrites. *)
+                canon_term
+              else subst ~term:canon_term ~path ~replacement:(var canon_v)
+            in
+            (canon_map, canon_term)
+        | Some canon_v ->
+            let canon_term =
+              if Int.equal v canon_v then
+                (* We avoid doing any trivial rewrites. *)
+                canon_term
+              else subst ~term:canon_term ~path ~replacement:(var canon_v)
+            in
+            (canon_map, canon_term))
+      (Int_map.empty, term)
+      term
 
   (* re-export pretty-printer *)
   let pp fmtr term = pp X.pp fmtr term
