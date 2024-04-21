@@ -62,6 +62,10 @@ module type S = sig
 
   type t = prim term
 
+  val get_prim : t -> prim
+
+  val get_subterms : t -> t array
+
   val equal : t -> t -> bool
 
   val hash : t -> int
@@ -91,6 +95,12 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
   type prim = X.t
 
   type t = prim term
+
+  (* re-export generic get_prim *)
+  let get_prim = get_prim
+
+  (* re-export generic get_subterms *)
+  let get_subterms = get_subterms
 
   let hash_empty_array = Hashtbl.hash [||]
 
