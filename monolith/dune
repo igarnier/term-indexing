@@ -3,3 +3,9 @@
  (modules pvector)
  (libraries lib_rewriting containers monolith)
 )
+
+(executable
+ (name puf)
+ (modules puf)
+ (libraries lib_rewriting containers monolith)
+)
