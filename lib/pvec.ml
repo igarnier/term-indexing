@@ -26,6 +26,8 @@
 
 (* Modified to use extensible arrays*)
 
+(* TODO optim: we don't need full persistence, semi-persistence is enough *)
+
 module Vec = Containers.Vector
 
 type 'a arr = 'a Vec.vector
