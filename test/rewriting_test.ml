@@ -33,7 +33,7 @@ let div x y = Expr.prim Div [| x; y |]
 
 let float f = Expr.prim (Prim.Float f) [||]
 
-let var s = Expr.prim (Prim.Var s) [||]
+let var s = Expr.var s
 
 (* -------------------- *)
 
@@ -44,8 +44,8 @@ let rec to_native : Expr.t -> native =
   | Prim (Prim.Sub, [| lhs; rhs |]) -> Sub (to_native lhs, to_native rhs)
   | Prim (Prim.Mul, [| lhs; rhs |]) -> Mul (to_native lhs, to_native rhs)
   | Prim (Prim.Div, [| lhs; rhs |]) -> Div (to_native lhs, to_native rhs)
-  | Prim (Prim.Var v, [||]) -> Var v
   | Prim (Float f, [||]) -> Const f
+  | Var v -> Var v
   | _ -> assert false
 
 (* -------------------- *)

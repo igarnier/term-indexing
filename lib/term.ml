@@ -1,18 +1,12 @@
 type 'prim term = 'prim desc Hashcons.hash_consed
 
-and 'prim desc = Prim of 'prim * 'prim term array
+and 'prim desc = Prim of 'prim * 'prim term array | Var of int
 (* OPTIM: add a boolean to compute in O(1) whether a term is ground *)
-
-let get_prim term = match term.Hashcons.node with Prim (prim, _) -> prim
-[@@ocaml.inline]
-
-let get_subterms term =
-  match term.Hashcons.node with Prim (_, subterms) -> subterms
-[@@ocaml.inline]
 
 let rec pp pp_prim fmtr term =
   let open Format in
   match term.Hashcons.node with
+  | Var i -> fprintf fmtr "%d" i
   | Prim (prim, [||]) -> fprintf fmtr "%a" pp_prim prim
   | Prim (prim, subterms) ->
       fprintf
@@ -29,7 +23,9 @@ let rec pp pp_prim fmtr term =
    TODO: make tail-recursive if needed. *)
 let rec fold f acc term path =
   let acc = f term path acc in
-  fold_subterms f acc (get_subterms term) path 0
+  match term.Hashcons.node with
+  | Var _ -> acc
+  | Prim (_, subterms) -> fold_subterms f acc subterms path 0
 
 and fold_subterms f acc subterms path i =
   if i = Array.length subterms then acc
@@ -50,7 +46,8 @@ let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
       | Prim (_, subterms) ->
           let len = Array.length subterms in
           if index >= len then raise (Get_subterm_oob (path, len))
-          else get_subterm_fwd subterms.(index) l)
+          else get_subterm_fwd subterms.(index) l
+      | Var _ -> raise (Get_subterm_oob (path, 0)))
 
 let get_subterm : 'prim term -> Path.t -> 'prim term =
  fun term path ->
@@ -61,10 +58,6 @@ module type S = sig
   type prim
 
   type t = prim term
-
-  val get_prim : t -> prim
-
-  val get_subterms : t -> t array
 
   val equal : t -> t -> bool
 
@@ -96,12 +89,6 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
 
   type t = prim term
 
-  (* re-export generic get_prim *)
-  let get_prim = get_prim
-
-  (* re-export generic get_subterms *)
-  let get_subterms = get_subterms
-
   let hash_empty_array = Hashtbl.hash [||]
 
   let hash_node_array (l : t array) : int =
@@ -111,11 +98,18 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
   module Hcons = Hashcons.Make (struct
     type t = prim desc
 
-    let equal (Prim (p1, a1)) (Prim (p2, a2)) =
-      if Array.length a1 <> Array.length a2 then false
-      else X.equal p1 p2 && Array.for_all2 (fun x y -> x == y) a1 a2
+    let equal desc1 desc2 =
+      match (desc1, desc2) with
+      | (Var i1, Var i2) -> i1 = i2
+      | (Prim (p1, a1), Prim (p2, a2)) ->
+          X.equal p1 p2
+          && Array.length a1 = Array.length a2
+          && Array.for_all2 ( == ) a1 a2
+      | _ -> false
 
-    let hash (Prim (p, a)) = Hashtbl.hash (Hashtbl.hash p, hash_node_array a)
+    let hash = function
+      | Var i -> Hashtbl.hash i
+      | Prim (p, a) -> Hashtbl.hash (X.hash p, hash_node_array a)
   end)
 
   let table = Hcons.create 1024
@@ -135,10 +129,10 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
         (X.arity head)
     else Hcons.hashcons table (Prim (head, subterms))
 
-  let var i = prim (X.var i) [||]
+  let var i = Hcons.hashcons table (Var i)
 
   let is_var term =
-    match term.Hashcons.node with Prim (p, [||]) -> X.is_var p | _ -> None
+    match term.Hashcons.node with Var v -> Some v | Prim (_, _) -> None
 
   (* re-export generic fold *)
   let fold = fold
@@ -146,9 +140,7 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
   let fold_variables f acc term =
     fold
       (fun term path acc ->
-        match X.is_var (get_prim term) with
-        | None -> acc
-        | Some var -> f var path acc)
+        match term.Hashcons.node with Var v -> f v path acc | _ -> acc)
       acc
       term
 
@@ -164,6 +156,7 @@ module Make_hash_consed (X : Signature.S) : S with type prim = X.t = struct
     | [] -> replacement
     | index :: l -> (
         match term.Hashcons.node with
+        | Var _ -> raise (Get_subterm_oob (path, 0))
         | Prim (s, subterms) -> prim s (subst_at subterms index l replacement))
 
   and subst_at : t array -> int -> Path.forward -> t -> t array =

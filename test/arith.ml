@@ -1,7 +1,7 @@
 open Lib_rewriting
 
 module Prim = struct
-  type t = Add | Sub | Mul | Div | Var of int | Float of float
+  type t = Add | Sub | Mul | Div | Float of float
 
   let compare (x : t) (y : t) = Stdlib.compare x y
 
@@ -14,14 +14,9 @@ module Prim = struct
     | Sub -> Format.fprintf fmtr "Sub"
     | Mul -> Format.fprintf fmtr "Mul"
     | Div -> Format.fprintf fmtr "Div"
-    | Var id -> Format.fprintf fmtr "Var(%d)" id
     | Float f -> Format.fprintf fmtr "%f" f
 
-  let arity = function Add | Sub | Mul | Div -> 2 | Var _ | Float _ -> 0
-
-  let var i = Var i
-
-  let is_var = function Var id -> Some id | _ -> None
+  let arity = function Add | Sub | Mul | Div -> 2 | Float _ -> 0
 end
 
 module Expr = Term.Make_hash_consed (Prim)
@@ -36,7 +31,7 @@ let div x y = Expr.prim Div [| x; y |]
 
 let float f = Expr.prim (Prim.Float f) [||]
 
-let var s = Expr.prim (Prim.Var s) [||]
+let var s = Expr.var s
 
 (* ---------------------------------------- *)
 

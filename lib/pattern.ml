@@ -22,6 +22,7 @@ type ('f1, 'f2, 'f) join =
 
 type (_, _) pattern_desc =
   | Patt_prim : 'p prim_pred * ('p, 'f) pattern_list -> ('p, 'f) pattern_desc
+  | Patt_var : int -> ('p, unfocused) pattern_desc
   | Patt_any : ('p, unfocused) pattern_desc
   | Patt_focus : ('p, unfocused) pattern -> ('p, focused) pattern_desc
 
@@ -34,10 +35,7 @@ and (_, _) pattern_list =
       ('p, 'f1) pattern * ('p, 'f2) pattern_list * ('f1, 'f2, 'f) join
       -> ('p, 'f) pattern_list
 
-and 'p prim_pred =
-  | Patt_prim_equal of 'p
-  | Patt_pred of ('p -> bool)
-  | Patt_var of int
+and 'p prim_pred = Patt_prim_equal of 'p | Patt_pred of ('p -> bool)
 
 (* type 'p focused_pattern = ('p, focused) pattern *)
 
@@ -47,6 +45,7 @@ let rec get_focus : type f. ('p, f) pattern -> f focus_tag =
  fun { patt_desc; _ } ->
   match patt_desc with
   | Patt_prim (_prim, subpatts) -> get_focus_list subpatts
+  | Patt_var _ -> Unfocused_tag
   | Patt_any -> Unfocused_tag
   | Patt_focus _ -> Focused_tag
 
@@ -142,18 +141,15 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
     match (patt.patt_desc, node.Hashcons.node) with
     | (Patt_focus patt, _) -> pattern_matches_aux patt node
     | (Patt_any, _) -> true
+    | (Patt_var i, Var j) -> i = j
+    | (Patt_var _, _) -> false
+    | (Patt_prim _, Var _) -> false
     | (Patt_prim (hpred, subpatts), Prim (prim, subterms)) -> (
         match hpred with
         | Patt_prim_equal h ->
             if X.equal h prim then list_matches subpatts subterms 0 else false
         | Patt_pred pred ->
-            if pred prim then list_matches subpatts subterms 0 else false
-        | Patt_var id -> (
-            match X.is_var prim with
-            | Some id' ->
-                assert (Array.length subterms = 0) ;
-                id = id'
-            | None -> false))
+            if pred prim then list_matches subpatts subterms 0 else false)
 
   and list_matches : type f. (X.t, f) pattern_list -> node array -> int -> bool
       =
@@ -173,17 +169,20 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
 
   let rec all_matches_aux : t -> node -> Path.t -> Path.t list -> Path.t list =
    fun patt node position acc ->
-    match node.Hashcons.node with
-    | Prim (_, subterms) ->
-        let (_, acc) =
-          Array.fold_left
-            (fun (index, acc) subterm ->
-              let position = Path.at_index index position in
-              (index + 1, all_matches_aux patt subterm position acc))
-            (0, acc)
-            subterms
-        in
-        if pattern_matches patt node then position :: acc else acc
+    let subterms =
+      match node.Hashcons.node with
+      | Prim (_, subterms) -> subterms
+      | Var _ -> [||]
+    in
+    let (_, acc) =
+      Array.fold_left
+        (fun (index, acc) subterm ->
+          let position = Path.at_index index position in
+          (index + 1, all_matches_aux patt subterm position acc))
+        (0, acc)
+        subterms
+    in
+    if pattern_matches patt node then position :: acc else acc
 
   let focus_matches pattern paths =
     match pattern with
@@ -227,7 +226,7 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
     match patts with
     | Ex_patt_list patts -> ex_patt (Patt_prim (Patt_pred prim_pred, patts))
 
-  let var id = ex_patt (Patt_prim (Patt_var id, Patt_list_empty))
+  let var id = ex_patt (Patt_var id)
 
   let any = ex_patt Patt_any
 
@@ -262,9 +261,7 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
         Format.fprintf fmtr "[%a](%a)" X.pp prim pp_patt_list subpatts
     | Patt_prim (Patt_pred _, subpatts) ->
         Format.fprintf fmtr "[opaque_pred](%a)" pp_patt_list subpatts
-    | Patt_prim (Patt_var id, subpatts) ->
-        (match subpatts with Patt_list_empty -> () | _ -> assert false) ;
-        Format.fprintf fmtr "[var %d]" id
+    | Patt_var id -> Format.fprintf fmtr "[var %d]" id
     | Patt_any -> Format.pp_print_string fmtr "_"
     | Patt_focus patt -> Format.fprintf fmtr "[> %a <]" pp_patt patt
 
@@ -301,18 +298,21 @@ end = struct
     let patt_uid = uid patt in
     let node_tag = node.tag in
     match Hashtbl.find_opt table { patt_uid; node_tag } with
-    | None -> (
-        match node.Hashcons.node with
-        | Prim (_, subterms) ->
-            let (_, acc) =
-              Array.fold_left
-                (fun (index, acc) subterm ->
-                  let position = Path.at_index index position in
-                  (index + 1, all_matches_aux patt subterm position acc))
-                (0, acc)
-                subterms
-            in
-            if pattern_matches patt node then position :: acc else acc)
+    | None ->
+        let subterms =
+          match node.Hashcons.node with
+          | Var _ -> [||]
+          | Prim (_, subterms) -> subterms
+        in
+        let (_, acc) =
+          Array.fold_left
+            (fun (index, acc) subterm ->
+              let position = Path.at_index index position in
+              (index + 1, all_matches_aux patt subterm position acc))
+            (0, acc)
+            subterms
+        in
+        if pattern_matches patt node then position :: acc else acc
     | Some res -> List.rev_append res acc
 
   let all_matches_with_hash_consing pattern node =
