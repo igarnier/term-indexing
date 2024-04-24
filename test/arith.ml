@@ -35,6 +35,38 @@ let var s = Expr.var s
 
 (* ---------------------------------------- *)
 
+type native =
+  | Add of native * native
+  | Sub of native * native
+  | Mul of native * native
+  | Div of native * native
+  | Var of int
+  | Const of float
+
+let rec pp_native fmtr (term : native) =
+  match term with
+  | Add (l, r) -> Format.fprintf fmtr "@[(%a + %a)@]" pp_native l pp_native r
+  | Sub (l, r) -> Format.fprintf fmtr "@[(%a - %a)@]" pp_native l pp_native r
+  | Mul (l, r) -> Format.fprintf fmtr "@[(%a * %a)@]" pp_native l pp_native r
+  | Div (l, r) -> Format.fprintf fmtr "@[(%a / %a)@]" pp_native l pp_native r
+  | Var v -> Format.fprintf fmtr "@[%d@]" v
+  | Const f -> Format.fprintf fmtr "@[%.3f@]" f
+
+(* -------------------- *)
+
+let rec to_native : Expr.t -> native =
+ fun { Hashcons.node = desc; _ } ->
+  match desc with
+  | Prim (Prim.Add, [| lhs; rhs |]) -> Add (to_native lhs, to_native rhs)
+  | Prim (Prim.Sub, [| lhs; rhs |]) -> Sub (to_native lhs, to_native rhs)
+  | Prim (Prim.Mul, [| lhs; rhs |]) -> Mul (to_native lhs, to_native rhs)
+  | Prim (Prim.Div, [| lhs; rhs |]) -> Div (to_native lhs, to_native rhs)
+  | Prim (Float f, [||]) -> Const f
+  | Var v -> Var v
+  | _ -> assert false
+
+(* ---------------------------------------- *)
+
 module Gen = QCheck2.Gen
 
 let symbol =
@@ -47,11 +79,9 @@ let symbol =
        (10, `Div)
     |]
 
-let var = Gen.map var Gen.small_nat
-
-let float_ = Gen.map float (Gen.float_range (-1000.) 1000.)
-
 let gen : Expr.t Gen.t =
+  let var = Gen.map var Gen.small_nat in
+  let float_ = Gen.map float (Gen.float_range (-1000.) 1000.) in
   Gen.(
     fix
       (fun self n ->
