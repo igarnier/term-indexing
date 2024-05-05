@@ -1,5 +1,5 @@
 (library
   (name lib_rewriting)
   (public_name lib_rewriting)
-  (libraries hashcons containers)
+  (libraries hashcons containers printbox printbox-text)
   (ocamlopt_flags (-warn-error -39)))

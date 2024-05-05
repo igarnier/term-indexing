@@ -43,7 +43,10 @@ let expression =
   let subexpr = mul (float 2.) (add (var 0) (var 1)) in
   sub subexpr (div subexpr (div subexpr (var 2)))
 
-let () = Format.eprintf "%a@." pp_native (to_native expression)
+let () =
+  assert (
+    Format.asprintf "%a" pp_native (to_native expression)
+    = "((2.000 * (0 + 1)) - ((2.000 * (0 + 1)) / ((2.000 * (0 + 1)) / 2)))")
 
 (* Matches are produced in a depth-first fashion, hence matches
    closer to the root are closer to the beginning of the list of
@@ -51,7 +54,9 @@ let () = Format.eprintf "%a@." pp_native (to_native expression)
 let matches = Patt.all_matches pattern expression
 
 let () =
-  List.iter (fun path -> Format.printf "%s@." (Path.to_string path)) matches
+  match List.map Path.to_string matches with
+  | ["0 -> *"; "0 -> 1 -> *"; "0 -> 1 -> 1 -> *"] -> ()
+  | _ -> assert false
 
 (* Rewrite deeper matches first *)
 let rewritten =
@@ -61,7 +66,15 @@ let target =
   let subexpr = add (mul (float 2.) (var 0)) (mul (float 2.) (var 1)) in
   sub subexpr (div subexpr (div subexpr (var 2)))
 
-let () = Format.eprintf "%a@." pp_native (to_native rewritten)
+let () =
+  assert (
+    String.equal
+      (Format.asprintf "%a" pp_native (to_native rewritten))
+      "(((2.000 * 0) + (2.000 * 1)) - (((2.000 * 0) + (2.000 * 1)) / (((2.000 \
+       * 0) + \n\
+      \                                                               (2.000 * \n\
+      \                                                               1)) / \n\
+      \                                                              2)))")
 
 (* Thanks to hash-consing, structural equality is physical equality *)
 let () = assert (target.tag = rewritten.tag)

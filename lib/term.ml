@@ -1,12 +1,12 @@
 type 'prim term = 'prim desc Hashcons.hash_consed
 
 and 'prim desc = Prim of 'prim * 'prim term array | Var of int
-(* OPTIM: add a boolean to compute in O(1) whether a term is ground *)
+(* OPTIM: add a boolean tag to compute in O(1) whether a term is ground *)
 
 let rec pp pp_prim fmtr term =
   let open Format in
   match term.Hashcons.node with
-  | Var i -> fprintf fmtr "%d" i
+  | Var i -> fprintf fmtr "V(%d)" i
   | Prim (prim, [||]) -> fprintf fmtr "%a" pp_prim prim
   | Prim (prim, subterms) ->
       fprintf

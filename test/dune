@@ -1,4 +1,4 @@
 (tests
- (names rewriting_test term_test subst_test)
+ (names path_test rewriting_test term_test subst_test)
  (libraries lib_rewriting qcheck-alcotest containers)
 )

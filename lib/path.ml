@@ -24,12 +24,16 @@ let rec compare path1 path2 =
       let c = Int.compare i1 i2 in
       if c = 0 then compare p1 p2 else c
 
+let equal path1 path2 = compare path1 path2 = 0
+
 let reverse path =
   let rec reverse : t -> forward -> forward =
    fun path acc ->
     match path with Root -> acc | At_index (i, path) -> reverse path (i :: acc)
   in
   reverse path []
+
+let hash path = Hashtbl.hash path
 
 let rec pp fmtr (path : t) =
   match path with
