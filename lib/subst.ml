@@ -223,7 +223,7 @@ struct
 
   (* Invariant: keys of a substitution are indexing variables,
      which are strictly negative *)
-  type 'a tree = { fresh : int ref; mutable node : 'a node }
+  type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
 
   and 'a node =
     { mutable head : subst;
@@ -252,15 +252,14 @@ struct
 
   let pp_node pp_data fmtr node = PrintBox_text.pp fmtr (to_box pp_data node)
 
-  let pp pp_data fmtr tree = pp_node pp_data fmtr tree.node
+  let pp pp_data fmtr tree =
+    PrintBox_text.pp fmtr (PrintBox.vlist (box_of_subtrees pp_data tree.nodes))
 
   let canonical_indexing_variable = -1
 
   let create () =
     (* It is critical that indexing variables are < canonical_indexing_variable *)
-    { fresh = ref canonical_indexing_variable;
-      node = { head = Subst.identity (); subtrees = Vec.create (); data = None }
-    }
+    { fresh = ref canonical_indexing_variable; nodes = Vec.create () }
 
   let try_set tree data may_overwrite =
     if may_overwrite then tree.data <- Some data
@@ -279,12 +278,6 @@ struct
         Vec.push t { head = subst; subtrees = Vec.create (); data = Some data }
       else
         let ti = Vec.get t i in
-        Format.printf
-          "inserting %a in@.%a@."
-          Subst.pp
-          subst
-          (pp_node (fun _ _ -> ()))
-          ti ;
         match ti with
         | { head; subtrees; data = _ } ->
             (* [residual1] contains either variables in the domain of [subst] or fresh variables,
@@ -301,18 +294,6 @@ struct
                   decr counter ;
                   !counter)
             in
-            Format.printf
-              "mscg(%a, %a) = %a, %a, %a@."
-              Subst.pp
-              subst
-              Subst.pp
-              head
-              Subst.pp
-              result
-              Subst.pp
-              residual1
-              Subst.pp
-              residual2 ;
             if Subst.is_identity result then
               (* [subst] is incompatible with [head], try next sibling
                  TODO: we might optimize the search by indexing trees by their head constructor for a particular variable.
@@ -348,23 +329,9 @@ struct
               in
               Vec.set t i new_node)
     in
-    (* if Subst.is_identity subst then try_set tree data *)
-    (* else *)
-    insert_aux subst tree.node.subtrees 0
+    insert_aux subst tree.nodes 0
 
   let canonical_indexing_variable = -1
-
-  let check_invariants tree =
-    let rec check_invariants node =
-      let head = node.head in
-      Vec.iter
-        (fun node' ->
-          let head' = node'.head in
-          assert (Option.is_some (Subst.union head head')) ;
-          check_invariants node')
-        node.subtrees
-    in
-    check_invariants tree.node
 
   let insert term data may_overwrite tree =
     insert_subst
@@ -372,6 +339,22 @@ struct
       data
       may_overwrite
       tree
+
+  let check_invariants tree =
+    let exception Fail in
+    let rec check_invariants node =
+      let head = node.head in
+      Vec.iter
+        (fun node' ->
+          let head' = node'.head in
+          if not (Option.is_some (Subst.union head head')) then raise Fail ;
+          check_invariants node')
+        node.subtrees
+    in
+    try
+      Vec.iter check_invariants tree.nodes ;
+      true
+    with Fail -> false
 
   (*
      To reconstruct the substitution at a given node, we can rely on the fact that on
@@ -394,5 +377,5 @@ struct
       iter_node f subst (Vec.get tree.subtrees i)
     done
 
-  let iter f { node; _ } = iter_node f (Subst.identity ()) node
+  let iter f { nodes; _ } = Vec.iter (iter_node f (Subst.identity ())) nodes
 end

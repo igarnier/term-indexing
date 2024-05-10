@@ -157,13 +157,13 @@ let mscg_subst =
 let subst_tree_insert_terms =
   Alcotest.test_case "subst-tree-insert" `Quick (fun () ->
       let index = Index.create () in
-      Index.check_invariants index ;
+      assert (Index.check_invariants index) ;
       Index.insert (add (float 1.0) (float 1.0)) 0 false index ;
-      Index.check_invariants index ;
+      assert (Index.check_invariants index) ;
       Index.insert (float 1.0) 0 false index ;
-      Index.check_invariants index ;
+      assert (Index.check_invariants index) ;
       Index.insert (add (float 1.0) (float 1.0)) 1 true index ;
-      Index.check_invariants index)
+      assert (Index.check_invariants index))
 
 let subst_tree_insert_terms2 =
   Alcotest.test_case "subst-tree-insert-terms-2" `Quick (fun () ->
@@ -207,7 +207,7 @@ let subst_tree_insert_random_term =
           (fun i t ->
             Hashtbl.replace table t i ;
             Index.insert t i true index ;
-            Index.check_invariants index)
+            assert (Index.check_invariants index))
           terms ;
         Index.iter
           (fun term data ->
