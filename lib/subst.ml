@@ -98,7 +98,7 @@ module Make (X : Signature.S) (T : Term.S with type prim = X.t) :
 
   let eval_exn v (subst : t) = Int_map.find v subst
 
-  (* /!\ no occur check, the substitution should be well-founded or this will stack overlflow *)
+  (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
     match term.Hashcons.node with
     | Prim (prim, subterms) -> T.prim prim (Array.map (lift subst) subterms)
@@ -124,16 +124,8 @@ module Make (X : Signature.S) (T : Term.S with type prim = X.t) :
   let rec mscg_aux (t1 : T.t) (t2 : T.t) gen residual1 residual2 =
     if T.equal t1 t2 then (t1, residual1, residual2)
     else
+      (* Does it hold that t1 and t2 cannot be both indicator variables? *)
       match (t1.Hashcons.node, t2.Hashcons.node) with
-      (* | (Term.Var v1, Term.Var v2) -> *)
-      (*     if is_indicator v1 then *)
-      (*       (\* assert (v1 <> v2) *\) *)
-      (*       (\* most common generalization of \ast_k and \ast_j is \ast_k *\) *)
-      (*       (\* note we don't extend [residual1] because it would be an identity *\) *)
-      (*       (t1, residual1, Int_map.add v1 t2 residual2) *)
-      (*     else if is_indicator v2 then *)
-      (*       (t2, Int_map.add v2 t1 residual1, residual2) *)
-      (*     else generalize t1 t2 gen residual1 residual2 *)
       | (Term.Prim (prim1, subterms1), Term.Prim (prim2, subterms2)) ->
           if X.equal prim1 prim2 then
             let (subterms, residual1, residual2) =
@@ -362,20 +354,30 @@ struct
      we can extract the term by evaluating the substitution.
    *)
 
-  let rec iter_node f subst tree =
+  let rec iter_node f subst node =
     let subst =
-      match Subst.union tree.head subst with
+      match Subst.union node.head subst with
       | None -> assert false
       | Some subst -> subst
     in
-    (match tree.data with
+    (match node.data with
     | None -> ()
     | Some data ->
         let term = Subst.eval_exn canonical_indexing_variable subst in
         f (Subst.lift subst term) data) ;
-    for i = 0 to Vec.length tree.subtrees - 1 do
-      iter_node f subst (Vec.get tree.subtrees i)
+    for i = 0 to Vec.length node.subtrees - 1 do
+      iter_node f subst (Vec.get node.subtrees i)
     done
 
   let iter f { nodes; _ } = Vec.iter (iter_node f (Subst.identity ())) nodes
+
+  (* TODO *)
+  (* let iter_unifiable_node query f tree = *)
+  (*   (\* if head is unifiable with current state then *)
+  (*      1) iterate on node.data if relevant *)
+  (*      2) iterate on subtrees *\) *)
+  (*   assert false *)
+
+  (* let iter_unifiable query f { nodes; _ } = *)
+  (*   Vec.iter (iter_unifiable_node query f) nodes *)
 end
