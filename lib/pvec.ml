@@ -123,7 +123,7 @@ let push t v : 'a t =
   | Diff _ | Pop _ | Push _ -> assert false
 
 (* CAVEAT: Do not use `with_array` with a function `f` that may reroot
-   the persitent array `t` (for instance by accessing, even with `get`
+   the persistent array `t` (for instance by accessing, even with `get`
    only, to other versions of `t`). *)
 let with_array t f =
   reroot t ;
