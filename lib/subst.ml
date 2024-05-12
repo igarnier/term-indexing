@@ -8,8 +8,10 @@ module type S = sig
   (** The type of variables *)
   type var
 
+  module Var_map : Intf.Map with type key = var
+
   (** The type of substitutions *)
-  type t
+  type t = term Var_map.t
 
   val of_list : (var * term) list -> t
 
@@ -72,8 +74,10 @@ module type Tree_S = sig
 end
 
 module Make (P : Intf.Signature) (T : Term.S with type prim = P.t) :
-  S with type term = T.t and type var = T.var and type t = T.t T.Var_map.t =
-struct
+  S
+    with type term = T.t
+     and type var = T.var
+     and type 'a Var_map.t = 'a T.Var_map.t = struct
   type term = T.t
 
   type var = T.var
@@ -143,7 +147,10 @@ module Make_index
     (P : Intf.Signature)
     (V : Indicator)
     (T : Term.S with type prim = P.t and type var = V.t)
-    (S : module type of Make (P) (T)) =
+    (S : S
+           with type term = T.t
+            and type var = V.t
+            and type 'a Var_map.t = 'a T.Var_map.t) =
 struct
   type term = T.t
 
