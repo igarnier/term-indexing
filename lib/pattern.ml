@@ -20,20 +20,23 @@ type ('f1, 'f2, 'f) join =
   | UF : (unfocused, focused, focused) join
   | FF : (focused, focused, focused) join
 
-type (_, _) pattern_desc =
-  | Patt_prim : 'p prim_pred * ('p, 'f) pattern_list -> ('p, 'f) pattern_desc
-  | Patt_var : int -> ('p, unfocused) pattern_desc
-  | Patt_any : ('p, unfocused) pattern_desc
-  | Patt_focus : ('p, unfocused) pattern -> ('p, focused) pattern_desc
+type (_, _, _) pattern_desc =
+  | Patt_prim :
+      'p prim_pred * ('p, 'v, 'f) pattern_list
+      -> ('p, 'v, 'f) pattern_desc
+  | Patt_var : 'v -> ('p, 'v, unfocused) pattern_desc
+  | Patt_any : ('p, 'v, unfocused) pattern_desc
+  | Patt_focus : ('p, 'v, unfocused) pattern -> ('p, 'v, focused) pattern_desc
 
-and ('p, 'f) pattern = { patt_desc : ('p, 'f) pattern_desc; patt_uid : int }
+and ('p, 'v, 'f) pattern =
+  { patt_desc : ('p, 'v, 'f) pattern_desc; patt_uid : int }
 
-and (_, _) pattern_list =
-  | Patt_list_empty : ('p, unfocused) pattern_list
-  | Patt_list_any : ('p, unfocused) pattern_list
+and (_, _, _) pattern_list =
+  | Patt_list_empty : ('p, 'v, unfocused) pattern_list
+  | Patt_list_any : ('p, 'v, unfocused) pattern_list
   | Patt_list_cons :
-      ('p, 'f1) pattern * ('p, 'f2) pattern_list * ('f1, 'f2, 'f) join
-      -> ('p, 'f) pattern_list
+      ('p, 'v, 'f1) pattern * ('p, 'v, 'f2) pattern_list * ('f1, 'f2, 'f) join
+      -> ('p, 'v, 'f) pattern_list
 
 and 'p prim_pred = Patt_prim_equal of 'p | Patt_pred of ('p -> bool)
 
@@ -41,7 +44,7 @@ and 'p prim_pred = Patt_prim_equal of 'p | Patt_pred of ('p -> bool)
 
 (* type 'p unfocused_pattern = ('p, unfocused) pattern *)
 
-let rec get_focus : type f. ('p, f) pattern -> f focus_tag =
+let rec get_focus : type f. ('p, 'v, f) pattern -> f focus_tag =
  fun { patt_desc; _ } ->
   match patt_desc with
   | Patt_prim (_prim, subpatts) -> get_focus_list subpatts
@@ -49,7 +52,7 @@ let rec get_focus : type f. ('p, f) pattern -> f focus_tag =
   | Patt_any -> Unfocused_tag
   | Patt_focus _ -> Focused_tag
 
-and get_focus_list : type f. ('p, f) pattern_list -> f focus_tag =
+and get_focus_list : type f. ('p, 'v, f) pattern_list -> f focus_tag =
  fun patt_list ->
   match patt_list with
   | Patt_list_empty -> Unfocused_tag
@@ -63,6 +66,8 @@ and get_focus_list : type f. ('p, f) pattern_list -> f focus_tag =
 
 module type S = sig
   type prim
+
+  type var
 
   type path
 
@@ -82,7 +87,7 @@ module type S = sig
 
   val prim_pred : (prim -> bool) -> plist -> t
 
-  val var : int -> t
+  val var : var -> t
 
   val any : t
 
@@ -101,19 +106,25 @@ module type S = sig
   val uid : t -> int
 end
 
-module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
-  type prim = X.t
+module Make
+    (Prim : Intf.Signature)
+    (Var : Intf.Hashed)
+    (Term : Term.S with type var = Var.t and type prim = Prim.t) =
+struct
+  type prim = Prim.t
+
+  type var = Var.t
 
   type path = Path.t
 
-  type t = Ex_patt : (prim, 'f) pattern -> t
+  type t = Ex_patt : (prim, var, 'f) pattern -> t
 
-  type plist = Ex_patt_list : (X.t, 'f) pattern_list -> plist
+  type plist = Ex_patt_list : (prim, var, 'f) pattern_list -> plist
 
   type node = Term.t
 
   let rec get_paths_of_focuses :
-      ('p, focused) pattern -> Path.t -> Path.t list -> Path.t list =
+      (prim, var, focused) pattern -> Path.t -> Path.t list -> Path.t list =
    fun { patt_desc; _ } position acc ->
     match patt_desc with
     | Patt_prim (_, subterms) ->
@@ -121,8 +132,11 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
     | Patt_focus _ -> position :: acc
 
   and get_paths_of_focuses_list :
-      ('p, focused) pattern_list -> Path.t -> int -> Path.t list -> Path.t list
-      =
+      (prim, var, focused) pattern_list ->
+      Path.t ->
+      int ->
+      Path.t list ->
+      Path.t list =
    fun patt_list position index acc ->
     match patt_list with
     | Patt_list_cons (prim, tail, wit) -> (
@@ -136,7 +150,7 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
             let acc = get_paths_of_focuses prim prim_position acc in
             get_paths_of_focuses_list tail position (index + 1) acc)
 
-  let rec pattern_matches_aux : type f. (X.t, f) pattern -> node -> bool =
+  let rec pattern_matches_aux : type f. (prim, var, f) pattern -> node -> bool =
    fun patt node ->
     match (patt.patt_desc, node.Hashcons.node) with
     | (Patt_focus patt, _) -> pattern_matches_aux patt node
@@ -147,12 +161,13 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
     | (Patt_prim (hpred, subpatts), Prim (prim, subterms)) -> (
         match hpred with
         | Patt_prim_equal h ->
-            if X.equal h prim then list_matches subpatts subterms 0 else false
+            if Prim.equal h prim then list_matches subpatts subterms 0
+            else false
         | Patt_pred pred ->
             if pred prim then list_matches subpatts subterms 0 else false)
 
-  and list_matches : type f. (X.t, f) pattern_list -> node array -> int -> bool
-      =
+  and list_matches :
+      type f. (prim, var, f) pattern_list -> node array -> int -> bool =
    fun patts nodes index ->
     let remaining = Array.length nodes - index in
     match patts with
@@ -254,19 +269,19 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
 
   let ( @. ) = list_cons
 
-  let rec pp_patt : type f. Format.formatter -> (prim, f) pattern -> unit =
+  let rec pp_patt : type f. Format.formatter -> (prim, var, f) pattern -> unit =
    fun fmtr patt ->
     match patt.patt_desc with
     | Patt_prim (Patt_prim_equal prim, subpatts) ->
-        Format.fprintf fmtr "[%a](%a)" X.pp prim pp_patt_list subpatts
+        Format.fprintf fmtr "[%a](%a)" Prim.pp prim pp_patt_list subpatts
     | Patt_prim (Patt_pred _, subpatts) ->
         Format.fprintf fmtr "[opaque_pred](%a)" pp_patt_list subpatts
-    | Patt_var id -> Format.fprintf fmtr "[var %d]" id
+    | Patt_var id -> Format.fprintf fmtr "[var %a]" Var.pp id
     | Patt_any -> Format.pp_print_string fmtr "_"
     | Patt_focus patt -> Format.fprintf fmtr "[> %a <]" pp_patt patt
 
-  and pp_patt_list : type f. Format.formatter -> (prim, f) pattern_list -> unit
-      =
+  and pp_patt_list :
+      type f. Format.formatter -> (prim, var, f) pattern_list -> unit =
    fun fmtr patts ->
     match patts with
     | Patt_list_empty -> Format.pp_print_string fmtr "[]"
@@ -281,13 +296,15 @@ module Make (X : Signature.S) (Term : Term.S with type prim = X.t) = struct
 end
 
 module Make_with_hash_consing
-    (X : Signature.S)
-    (Term : Term.S with type prim = X.t) : sig
-  include S with type prim = X.t and type path = Path.t and type node = Term.t
+    (Prim : Intf.Signature)
+    (Var : Intf.Hashed)
+    (Term : Term.S with type var = Var.t and type prim = Prim.t) : sig
+  include
+    S with type prim = Prim.t and type path = Path.t and type node = Term.t
 
   val all_matches_with_hash_consing : t -> node -> path list
 end = struct
-  include Make (X) (Term)
+  include Make (Prim) (Var) (Term)
 
   type key = { patt_uid : int; node_tag : int }
 
