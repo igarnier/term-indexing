@@ -113,7 +113,7 @@ module Make
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
     match term.Hashcons.node with
-    | Prim (prim, subterms) -> T.prim prim (Array.map (lift subst) subterms)
+    | Prim (prim, subterms, _) -> T.prim prim (Array.map (lift subst) subterms)
     | Var v -> (
         match eval v subst with None -> term | Some term -> lift subst term)
 
@@ -195,7 +195,7 @@ struct
     else
       (* Does it hold that t1 and t2 cannot be both indicator variables? *)
       match (t1.Hashcons.node, t2.Hashcons.node) with
-      | (Term.Prim (prim1, subterms1), Term.Prim (prim2, subterms2)) ->
+      | (Term.Prim (prim1, subterms1, _), Term.Prim (prim2, subterms2, _)) ->
           if P.equal prim1 prim2 then
             let (subterms, residual1, residual2) =
               mscg_subterms subterms1 subterms2 gen residual1 residual2 [] 0
@@ -230,7 +230,8 @@ struct
 
   let top_symbol_disagrees (t1 : T.t) (t2 : T.t) =
     match (t1.Hashcons.node, t2.Hashcons.node) with
-    | (Term.Prim (prim1, _), Term.Prim (prim2, _)) -> not (P.equal prim1 prim2)
+    | (Term.Prim (prim1, _, _), Term.Prim (prim2, _, _)) ->
+        not (P.equal prim1 prim2)
     | (Term.Var v1, Term.Var v2) -> v1 <> v2
     | (Term.Prim _, Term.Var _) | (Term.Var _, Term.Prim _) -> true
 

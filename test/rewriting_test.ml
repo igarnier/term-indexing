@@ -31,8 +31,9 @@ let rewrite_at term path =
   let target = Expr.get_subterm term path in
   match target.Hashcons.node with
   | Prim
-      (Prim.Mul, [| something; { node = Prim (Prim.Add, [| lhs; rhs |]); _ } |])
-    ->
+      ( Prim.Mul,
+        [| something; { node = Prim (Prim.Add, [| lhs; rhs |], _); _ } |],
+        _ ) ->
       let replacement = add (mul something lhs) (mul something rhs) in
       Expr.subst ~term ~path ~replacement
   | _ -> assert false

@@ -1,6 +1,9 @@
+(** The type of hash-consed terms *)
 type 'prim term = 'prim desc Hashcons.hash_consed
 
-and 'prim desc = private Prim of 'prim * 'prim term array | Var of int
+and 'prim desc = private
+  | Prim of 'prim * 'prim term array * Int_option.t
+  | Var of int
 
 val fold : ('a term -> Path.t -> 'b -> 'b) -> 'b -> 'a term -> 'b
 

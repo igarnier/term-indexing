@@ -71,12 +71,12 @@ let rec pp_native fmtr (term : native) =
 let rec to_native : Expr.t -> native =
  fun { Hashcons.node = desc; _ } ->
   match desc with
-  | Prim (Prim.Add, [| lhs; rhs |]) -> Add (to_native lhs, to_native rhs)
-  | Prim (Prim.Sub, [| lhs; rhs |]) -> Sub (to_native lhs, to_native rhs)
-  | Prim (Prim.Mul, [| lhs; rhs |]) -> Mul (to_native lhs, to_native rhs)
-  | Prim (Prim.Div, [| lhs; rhs |]) -> Div (to_native lhs, to_native rhs)
-  | Prim (Prim.Neg, [| e |]) -> Neg (to_native e)
-  | Prim (Float f, [||]) -> Const f
+  | Prim (Prim.Add, [| lhs; rhs |], _) -> Add (to_native lhs, to_native rhs)
+  | Prim (Prim.Sub, [| lhs; rhs |], _) -> Sub (to_native lhs, to_native rhs)
+  | Prim (Prim.Mul, [| lhs; rhs |], _) -> Mul (to_native lhs, to_native rhs)
+  | Prim (Prim.Div, [| lhs; rhs |], _) -> Div (to_native lhs, to_native rhs)
+  | Prim (Prim.Neg, [| e |], _) -> Neg (to_native e)
+  | Prim (Float f, [||], _) -> Const f
   | Var v -> Var v
   | _ -> assert false
 

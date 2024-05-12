@@ -1,5 +1,7 @@
 type t = int
 
+let equal = Int.equal
+
 let none = Int.min_int
 
 let of_int x =

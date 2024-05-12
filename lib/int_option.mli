@@ -2,6 +2,8 @@
     [Some Int.max_int]. *)
 type t
 
+val equal : t -> t -> bool
+
 val none : t
 
 val of_int : int -> t

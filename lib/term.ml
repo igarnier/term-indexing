@@ -1,14 +1,14 @@
 type 'prim term = 'prim desc Hashcons.hash_consed
 
-and 'prim desc = Prim of 'prim * 'prim term array | Var of int
-(* OPTIM: add a boolean tag to compute in O(1) whether a term is ground *)
+and 'prim desc = Prim of 'prim * 'prim term array * Int_option.t | Var of int
+(* OPTIM: may be worth special-casing Prim for arities < 4 *)
 
 let rec pp pp_prim fmtr term =
   let open Format in
   match term.Hashcons.node with
   | Var i -> fprintf fmtr "V(%d)" i
-  | Prim (prim, [||]) -> fprintf fmtr "%a" pp_prim prim
-  | Prim (prim, subterms) ->
+  | Prim (prim, [||], _) -> fprintf fmtr "%a" pp_prim prim
+  | Prim (prim, subterms, _) ->
       fprintf
         fmtr
         "@[<hv 1>%a(%a)@]"
@@ -25,7 +25,7 @@ let rec fold f acc term path =
   let acc = f term path acc in
   match term.Hashcons.node with
   | Var _ -> acc
-  | Prim (_, subterms) -> fold_subterms f acc subterms path 0
+  | Prim (_, subterms, _) -> fold_subterms f acc subterms path 0
 
 and fold_subterms f acc subterms path i =
   if i = Array.length subterms then acc
@@ -43,7 +43,7 @@ let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
   | [] -> term
   | index :: l -> (
       match term.Hashcons.node with
-      | Prim (_, subterms) ->
+      | Prim (_, subterms, _) ->
           let len = Array.length subterms in
           if index >= len then raise (Get_subterm_oob (path, len))
           else get_subterm_fwd subterms.(index) l
@@ -110,15 +110,16 @@ module Make_hash_consed
     let equal desc1 desc2 =
       match (desc1, desc2) with
       | (Var i1, Var i2) -> Int.equal i1 i2
-      | (Prim (p1, a1), Prim (p2, a2)) ->
+      | (Prim (p1, a1, ub1), Prim (p2, a2, ub2)) ->
           P.equal p1 p2
           && Array.length a1 = Array.length a2
+          && Int_option.equal ub1 ub2
           && Array.for_all2 ( == ) a1 a2
       | _ -> false
 
     let hash = function
       | Var i -> Hashtbl.hash i
-      | Prim (p, a) -> Hashtbl.hash (P.hash p, hash_node_array a)
+      | Prim (p, a, ub) -> Hashtbl.hash (P.hash p, hash_node_array a, ub)
   end)
 
   let table = Hcons.create 1024
@@ -126,6 +127,20 @@ module Make_hash_consed
   let equal (t1 : t) (t2 : t) = t1 == t2
 
   let hash t = t.Hashcons.hkey
+
+  let ub : _ term -> Int_option.t =
+   fun term ->
+    match term.Hashcons.node with
+    | Var v -> Int_option.of_int (Int.abs v)
+    | Prim (_, _, ub) -> ub
+
+  let ub_array : _ term array -> Int_option.t =
+   fun subterms ->
+    (* TODO optim: manually unroll the cases where the length is <= 3 *)
+    Array.fold_left
+      (fun acc term -> Int_option.max acc (ub term))
+      Int_option.none
+      subterms
 
   let prim head subterms =
     if Array.length subterms <> P.arity head then
@@ -136,17 +151,18 @@ module Make_hash_consed
         head
         (Array.length subterms)
         (P.arity head)
-    else Hcons.hashcons table (Prim (head, subterms))
+    else Hcons.hashcons table (Prim (head, subterms, ub_array subterms))
 
   let var i = Hcons.hashcons table (Var i)
 
   let is_var term =
-    match term.Hashcons.node with Var v -> Some v | Prim (_, _) -> None
+    match term.Hashcons.node with Var v -> Some v | Prim (_, _, _) -> None
 
   (* re-export generic fold *)
   let fold = fold
 
   let fold_variables f acc term =
+    (* TODO optim: use [ub] field to skip recursing in ground subterms *)
     fold
       (fun term path acc ->
         match term.Hashcons.node with Var v -> f v path acc | _ -> acc)
@@ -166,7 +182,8 @@ module Make_hash_consed
     | index :: l -> (
         match term.Hashcons.node with
         | Var _ -> raise (Get_subterm_oob (path, 0))
-        | Prim (s, subterms) -> prim s (subst_at subterms index l replacement))
+        | Prim (s, subterms, _ub) ->
+            prim s (subst_at subterms index l replacement))
 
   and subst_at : t array -> int -> Path.forward -> t -> t array =
    fun subterms index path replacement ->

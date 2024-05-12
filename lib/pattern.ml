@@ -148,7 +148,7 @@ struct
     | (Patt_var i, Var j) -> i = j
     | (Patt_var _, _) -> false
     | (Patt_prim _, Var _) -> false
-    | (Patt_prim (hpred, subpatts), Prim (prim, subterms)) -> (
+    | (Patt_prim (hpred, subpatts), Prim (prim, subterms, _)) -> (
         match hpred with
         | Patt_prim_equal h ->
             if Prim.equal h prim then list_matches subpatts subterms 0
@@ -176,7 +176,7 @@ struct
    fun patt node position acc ->
     let subterms =
       match node.Hashcons.node with
-      | Prim (_, subterms) -> subterms
+      | Prim (_, subterms, _) -> subterms
       | Var _ -> [||]
     in
     let (_, acc) =
@@ -308,7 +308,7 @@ end = struct
         let subterms =
           match node.Hashcons.node with
           | Var _ -> [||]
-          | Prim (_, subterms) -> subterms
+          | Prim (_, subterms, _) -> subterms
         in
         let (_, acc) =
           Array.fold_left
