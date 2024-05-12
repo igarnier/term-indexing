@@ -64,7 +64,7 @@ module type S = sig
 
   type t = (prim, var) term
 
-  module Var_map : Intf.Map with type key = var
+  type 'a var_map
 
   val equal : t -> t -> bool
 
@@ -86,7 +86,7 @@ module type S = sig
 
   val subst : term:t -> path:Path.t -> replacement:t -> t
 
-  val canon : t -> (unit -> var) -> var Var_map.t * t
+  val canon : t -> (unit -> var) -> var var_map * t
 
   val pp : Format.formatter -> t -> unit
 end
@@ -95,14 +95,15 @@ module Make_hash_consed
     (P : Intf.Signature)
     (V : Intf.Hashed)
     (M : Intf.Map with type key = V.t) :
-  S with type prim = P.t and type var = V.t = struct
+  S with type prim = P.t and type var = V.t and type 'a var_map = 'a M.t =
+struct
   type var = V.t
 
   type prim = P.t
 
   type t = (prim, var) term
 
-  module Var_map = M
+  type 'a var_map = 'a M.t
 
   let hash_empty_array = Hashtbl.hash [||]
 
@@ -186,17 +187,17 @@ module Make_hash_consed
     let path = Path.reverse path in
     subst_aux ~term ~path ~replacement
 
-  (* TODO optim: consider using an extensible array from int to int instead of an Var_map.t *)
+  (* TODO optim: consider using an extensible array from int to int instead of an M.t *)
   (* TODO optim: this algorithm is potentially quadratic as we perform rewrites on-the-fly. We
      could batch those rewrites and perform them in one go. *)
-  let canon : t -> (unit -> var) -> var Var_map.t * t =
+  let canon : t -> (unit -> var) -> var M.t * t =
    fun term enum ->
     fold_variables
       (fun v path (canon_map, canon_term) ->
-        match Var_map.find_opt v canon_map with
+        match M.find_opt v canon_map with
         | None ->
             let canon_v = enum () in
-            let canon_map = Var_map.add v canon_v canon_map in
+            let canon_map = M.add v canon_v canon_map in
             let canon_term =
               if V.equal v canon_v then
                 (* We avoid doing any trivial rewrites. *)
@@ -212,7 +213,7 @@ module Make_hash_consed
               else subst ~term:canon_term ~path ~replacement:(var canon_v)
             in
             (canon_map, canon_term))
-      (Var_map.empty (), term)
+      (M.empty (), term)
       term
 
   (* re-export pretty-printer *)

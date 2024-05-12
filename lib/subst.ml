@@ -8,10 +8,10 @@ module type S = sig
   (** The type of variables *)
   type var
 
-  module Var_map : Intf.Map with type key = var
+  type 'a var_map
 
   (** The type of substitutions *)
-  type t = term Var_map.t
+  type t = term var_map
 
   val of_list : (var * term) list -> t
 
@@ -73,26 +73,30 @@ module type Tree_S = sig
   val iter : (term -> 'a) -> 'a t -> unit
 end
 
-module Make (P : Intf.Signature) (T : Term.S with type prim = P.t) :
-  S
-    with type term = T.t
-     and type var = T.var
-     and type 'a Var_map.t = 'a T.Var_map.t = struct
+module Make
+    (P : Intf.Signature)
+    (M : Intf.Map)
+    (T : Term.S
+           with type prim = P.t
+            and type var = M.key
+            and type 'a var_map = 'a M.t) :
+  S with type term = T.t and type var = T.var and type 'a var_map = 'a T.var_map =
+struct
   type term = T.t
 
   type var = T.var
 
-  module Var_map = T.Var_map
+  type 'a var_map = 'a T.var_map
 
-  type t = T.t Var_map.t
+  type t = T.t M.t
 
-  let identity () = Var_map.empty ()
+  let identity () = M.empty ()
 
-  let is_identity : t -> bool = Var_map.is_empty
+  let is_identity : t -> bool = M.is_empty
 
-  let of_list l : t = Var_map.of_list l
+  let of_list l : t = M.of_list l
 
-  let to_list (subst : t) = Var_map.to_list subst
+  let to_list (subst : t) = M.to_list subst
 
   let pp fmtr subst =
     let pp_binding fmtr (v, t) =
@@ -104,14 +108,14 @@ module Make (P : Intf.Signature) (T : Term.S with type prim = P.t) :
       (Format.pp_print_list
          ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
          pp_binding)
-      (Var_map.to_list subst)
+      (M.to_list subst)
 
-  let equal (s1 : t) (s2 : t) = Var_map.equal T.equal s1 s2
+  let equal (s1 : t) (s2 : t) = M.equal T.equal s1 s2
 
-  let eval v (subst : t) = Var_map.find_opt v subst
+  let eval v (subst : t) = M.find_opt v subst
 
   let eval_exn v (subst : t) =
-    match Var_map.find_opt v subst with None -> raise Not_found | Some t -> t
+    match M.find_opt v subst with None -> raise Not_found | Some t -> t
 
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
@@ -122,12 +126,10 @@ module Make (P : Intf.Signature) (T : Term.S with type prim = P.t) :
 
   let union subst1 subst2 =
     let exception Invalid_union in
-    try
-      Var_map.union (fun _ _ _ -> raise Invalid_union) subst1 subst2
-      |> Option.some
+    try M.union (fun _ _ _ -> raise Invalid_union) subst1 subst2 |> Option.some
     with Invalid_union -> None
 
-  let merge = Var_map.merge
+  let merge = M.merge
 end
 
 (** Substitution trees operate on terms where variables are split into two
@@ -146,17 +148,19 @@ end
 module Make_index
     (P : Intf.Signature)
     (V : Indicator)
-    (T : Term.S with type prim = P.t and type var = V.t)
+    (M : Intf.Map with type key = V.t)
+    (T : Term.S
+           with type prim = P.t
+            and type var = V.t
+            and type 'a var_map = 'a M.t)
     (S : S
            with type term = T.t
             and type var = V.t
-            and type 'a Var_map.t = 'a T.Var_map.t) =
+            and type 'a var_map = 'a T.var_map) =
 struct
   type term = T.t
 
   type subst = S.t
-
-  module Var_map = T.Var_map
 
   (* Invariant: keys of a substitution are indicator variables. *)
   type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
@@ -195,7 +199,7 @@ struct
 
   let generalize t1 t2 gen residual1 residual2 =
     let v = gen () in
-    (T.var v, Var_map.add v t1 residual1, Var_map.add v t2 residual2)
+    (T.var v, M.add v t1 residual1, M.add v t2 residual2)
   [@@ocaml.inline]
 
   (*
@@ -215,10 +219,10 @@ struct
             (T.prim prim1 subterms, residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
       | (_, Term.Var v) ->
-          if V.is_indicator v then (t2, Var_map.add v t1 residual1, residual2)
+          if V.is_indicator v then (t2, M.add v t1 residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
       | (Term.Var v, _) ->
-          if V.is_indicator v then (t1, residual1, Var_map.add v t2 residual2)
+          if V.is_indicator v then (t1, residual1, M.add v t2 residual2)
           else generalize t1 t2 gen residual1 residual2
 
   and mscg_subterms subterms1 subterms2 gen residual1 residual2 terms i =
@@ -238,7 +242,7 @@ struct
         (term :: terms)
         (i + 1)
 
-  let mscg t1 t2 gen = mscg_aux t1 t2 gen (Var_map.empty ()) (Var_map.empty ())
+  let mscg t1 t2 gen = mscg_aux t1 t2 gen (M.empty ()) (M.empty ())
 
   let top_symbol_disagrees (t1 : T.t) (t2 : T.t) =
     match (t1.Hashcons.node, t2.Hashcons.node) with
@@ -247,18 +251,18 @@ struct
     | (Term.Prim _, Term.Var _) | (Term.Var _, Term.Prim _) -> true
 
   let mscg_subst (s1 : subst) (s2 : subst) gen =
-    let residual1_acc = ref (Var_map.empty ()) in
-    let residual2_acc = ref (Var_map.empty ()) in
+    let residual1_acc = ref (M.empty ()) in
+    let residual2_acc = ref (M.empty ()) in
     let result =
       S.merge
         (fun v t1_opt t2_opt ->
           match (t1_opt, t2_opt) with
           | (None, None) -> assert false
           | (None, Some t2) ->
-              residual2_acc := Var_map.add v t2 !residual2_acc ;
+              residual2_acc := M.add v t2 !residual2_acc ;
               None
           | (Some t1, None) ->
-              residual1_acc := Var_map.add v t1 !residual1_acc ;
+              residual1_acc := M.add v t1 !residual1_acc ;
               None
           | (Some t1, Some t2) ->
               if T.equal t1 t2 then (* optimization *)
@@ -269,8 +273,8 @@ struct
                    and in the residuals, mapping the fresh indicator variable to resp. [t1] and [t2]. We
                    avoid creating a new variable by directly mapping [v] to [t1] (resp. [t2])
                 *)
-                residual1_acc := Var_map.add v t1 !residual1_acc ;
-                residual2_acc := Var_map.add v t2 !residual2_acc ;
+                residual1_acc := M.add v t1 !residual1_acc ;
+                residual2_acc := M.add v t2 !residual2_acc ;
                 None)
               else
                 let (res, residual1, residual2) =
@@ -390,11 +394,33 @@ struct
     | Some data ->
         let term = S.eval_exn (V.indicator 0) subst in
         f (S.lift subst term) data) ;
-    for i = 0 to Vec.length node.subtrees - 1 do
-      iter_node f subst (Vec.get node.subtrees i)
-    done
+    Vec.iter (fun node -> iter_node f subst node) node.subtrees
 
   let iter f { nodes; _ } = Vec.iter (iter_node f (S.identity ())) nodes
+
+  (* exception Not_unifiable *)
+
+  (* let rec unify (query : subst) (head : subst) = *)
+  (*   S.merge *)
+  (*     (fun _v q h -> *)
+  (*       match (q, h) with *)
+  (*       | (None, None) -> None *)
+  (*       | (Some t, None) -> Some t *)
+  (*       | (None, Some t) -> Some t *)
+  (*       | (Some qt, Some ht) -> unify_terms qt ht) *)
+  (*     query *)
+  (*     head *)
+
+  (* and unify_terms (qt : term) (ht : term) = *)
+  (*   match (qt.Hashcons.node, ht.Hashcons.node) with *)
+  (*   | (Prim (qp, qvec), Prim (hp, hvec)) -> *)
+  (*       if P.equal qp hp then ( *)
+  (*         assert (Vec.length qvec = Vec.length hvec) ; *)
+  (*         for i = 0 to Vec.length qvec - 1 do *)
+  (*           unify (Vec.get qvec i) (Vec.get hvec i) *)
+  (*         done) *)
+  (*       else None *)
+  (*   | Prim _, Var hv -> *)
 
   (* TODO *)
   (* let iter_unifiable_node query f tree = *)

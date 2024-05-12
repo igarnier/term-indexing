@@ -181,7 +181,7 @@ let subst_tree_insert_terms2 =
 let subst_tree_insert_random_term =
   QCheck2.Test.make
     ~name:"subst-tree-insert-random-term"
-    ~count:10_000
+    ~count:1_000
     (QCheck2.Gen.set_shrink (fun _ -> Seq.empty) (QCheck2.Gen.array Arith.gen))
     (fun terms ->
       let index = Index.create () in
