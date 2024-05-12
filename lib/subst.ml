@@ -5,10 +5,9 @@ module type S = sig
   (** The type of terms *)
   type term
 
-  (** The type of variables *)
-  type var
-
   type 'a var_map
+
+  type var := int
 
   (** The type of substitutions *)
   type t = term var_map
@@ -75,16 +74,10 @@ end
 
 module Make
     (P : Intf.Signature)
-    (M : Intf.Map)
-    (T : Term.S
-           with type prim = P.t
-            and type var = M.key
-            and type 'a var_map = 'a M.t) :
-  S with type term = T.t and type var = T.var and type 'a var_map = 'a T.var_map =
-struct
+    (M : Intf.Map with type key = int)
+    (T : Term.S with type prim = P.t and type 'a var_map = 'a M.t) :
+  S with type term = T.t and type 'a var_map = 'a T.var_map = struct
   type term = T.t
-
-  type var = T.var
 
   type 'a var_map = 'a T.var_map
 
@@ -132,31 +125,11 @@ struct
   let merge = M.merge
 end
 
-(** Substitution trees operate on terms where variables are split into two
-    disjoint subsets: variables stemming from the terms inserted by the user
-    and so-called 'indicator' variables, which constitute the domain of the
-    substitutions and denote sharing among sub-trees.
-*)
-module type Indicator = sig
-  include Intf.Hashed
-
-  val indicator : int -> t
-
-  val is_indicator : t -> bool
-end
-
 module Make_index
     (P : Intf.Signature)
-    (V : Indicator)
-    (M : Intf.Map with type key = V.t)
-    (T : Term.S
-           with type prim = P.t
-            and type var = V.t
-            and type 'a var_map = 'a M.t)
-    (S : S
-           with type term = T.t
-            and type var = V.t
-            and type 'a var_map = 'a T.var_map) =
+    (M : Intf.Map with type key = int)
+    (T : Term.S with type prim = P.t and type 'a var_map = 'a M.t)
+    (S : S with type term = T.t and type 'a var_map = 'a T.var_map) =
 struct
   type term = T.t
 
@@ -171,6 +144,17 @@ struct
       subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
+
+  (** Substitution trees operate on terms where variables are split into two
+      disjoint subsets: variables stemming from the terms inserted by the user
+      and so-called 'indicator' variables, which constitute the domain of the
+      substitutions and denote sharing among sub-trees.
+
+      We define indicator variables as the strictly negative integers.
+  *)
+  let indicator x = -(x + 1)
+
+  let is_indicator x = x < 0
 
   let rec to_box pp_data node =
     let open PrintBox in
@@ -219,10 +203,10 @@ struct
             (T.prim prim1 subterms, residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
       | (_, Term.Var v) ->
-          if V.is_indicator v then (t2, M.add v t1 residual1, residual2)
+          if is_indicator v then (t2, M.add v t1 residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
       | (Term.Var v, _) ->
-          if V.is_indicator v then (t1, residual1, M.add v t2 residual2)
+          if is_indicator v then (t1, residual1, M.add v t2 residual2)
           else generalize t1 t2 gen residual1 residual2
 
   and mscg_subterms subterms1 subterms2 gen residual1 residual2 terms i =
@@ -319,7 +303,7 @@ struct
             let (result, residual1, residual2) =
               mscg_subst subst head (fun () ->
                   counter := !counter + 1 ;
-                  V.indicator !counter)
+                  indicator !counter)
             in
             if S.is_identity result then
               (* [subst] is incompatible with [head], try next sibling
@@ -359,7 +343,7 @@ struct
     insert_aux subst tree.nodes 0
 
   let insert term data may_overwrite tree =
-    insert_subst (S.of_list [(V.indicator 0, term)]) data may_overwrite tree
+    insert_subst (S.of_list [(indicator 0, term)]) data may_overwrite tree
 
   let check_invariants tree =
     let exception Fail in
@@ -392,7 +376,7 @@ struct
     (match node.data with
     | None -> ()
     | Some data ->
-        let term = S.eval_exn (V.indicator 0) subst in
+        let term = S.eval_exn (indicator 0) subst in
         f (S.lift subst term) data) ;
     Vec.iter (fun node -> iter_node f subst node) node.subtrees
 

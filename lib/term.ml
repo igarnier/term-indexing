@@ -1,14 +1,12 @@
-type ('prim, 'var) term = ('prim, 'var) desc Hashcons.hash_consed
+type 'prim term = 'prim desc Hashcons.hash_consed
 
-and ('prim, 'var) desc =
-  | Prim of 'prim * ('prim, 'var) term array
-  | Var of 'var
+and 'prim desc = Prim of 'prim * 'prim term array | Var of int
 (* OPTIM: add a boolean tag to compute in O(1) whether a term is ground *)
 
-let rec pp pp_prim pp_var fmtr term =
+let rec pp pp_prim fmtr term =
   let open Format in
   match term.Hashcons.node with
-  | Var i -> fprintf fmtr "V(%a)" pp_var i
+  | Var i -> fprintf fmtr "V(%d)" i
   | Prim (prim, [||]) -> fprintf fmtr "%a" pp_prim prim
   | Prim (prim, subterms) ->
       fprintf
@@ -18,7 +16,7 @@ let rec pp pp_prim pp_var fmtr term =
         prim
         (pp_print_array
            ~pp_sep:(fun fmtr () -> fprintf fmtr ";@ ")
-           (pp pp_prim pp_var))
+           (pp pp_prim))
         subterms
 
 (* Fold over the term. Paths are in lexicographic order when reversed.
@@ -39,8 +37,7 @@ let fold f acc term = fold f acc term Path.root
 
 exception Get_subterm_oob of Path.forward * int
 
-let rec get_subterm_fwd :
-    ('prim, 'var) term -> Path.forward -> ('prim, 'var) term =
+let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
  fun term path ->
   match path with
   | [] -> term
@@ -52,7 +49,7 @@ let rec get_subterm_fwd :
           else get_subterm_fwd subterms.(index) l
       | Var _ -> raise (Get_subterm_oob (path, 0)))
 
-let get_subterm : ('prim, 'var) term -> Path.t -> ('prim, 'var) term =
+let get_subterm : 'prim term -> Path.t -> 'prim term =
  fun term path ->
   let path = Path.reverse path in
   get_subterm_fwd term path
@@ -60,9 +57,9 @@ let get_subterm : ('prim, 'var) term -> Path.t -> ('prim, 'var) term =
 module type S = sig
   type prim
 
-  type var
+  type t = prim term
 
-  type t = (prim, var) term
+  type var := int
 
   type 'a var_map
 
@@ -93,15 +90,11 @@ end
 
 module Make_hash_consed
     (P : Intf.Signature)
-    (V : Intf.Hashed)
-    (M : Intf.Map with type key = V.t) :
-  S with type prim = P.t and type var = V.t and type 'a var_map = 'a M.t =
-struct
-  type var = V.t
-
+    (M : Intf.Map with type key = int) :
+  S with type prim = P.t and type 'a var_map = 'a M.t = struct
   type prim = P.t
 
-  type t = (prim, var) term
+  type t = prim term
 
   type 'a var_map = 'a M.t
 
@@ -112,11 +105,11 @@ struct
     Array.fold_left (fun h elt -> Hashtbl.hash (h, elt.hkey)) hash_empty_array l
 
   module Hcons = Hashcons.Make (struct
-    type t = (prim, var) desc
+    type t = prim desc
 
     let equal desc1 desc2 =
       match (desc1, desc2) with
-      | (Var i1, Var i2) -> V.equal i1 i2
+      | (Var i1, Var i2) -> Int.equal i1 i2
       | (Prim (p1, a1), Prim (p2, a2)) ->
           P.equal p1 p2
           && Array.length a1 = Array.length a2
@@ -124,7 +117,7 @@ struct
       | _ -> false
 
     let hash = function
-      | Var i -> V.hash i
+      | Var i -> Hashtbl.hash i
       | Prim (p, a) -> Hashtbl.hash (P.hash p, hash_node_array a)
   end)
 
@@ -190,7 +183,7 @@ struct
   (* TODO optim: consider using an extensible array from int to int instead of an M.t *)
   (* TODO optim: this algorithm is potentially quadratic as we perform rewrites on-the-fly. We
      could batch those rewrites and perform them in one go. *)
-  let canon : t -> (unit -> var) -> var M.t * t =
+  let canon : t -> (unit -> int) -> int M.t * t =
    fun term enum ->
     fold_variables
       (fun v path (canon_map, canon_term) ->
@@ -199,7 +192,7 @@ struct
             let canon_v = enum () in
             let canon_map = M.add v canon_v canon_map in
             let canon_term =
-              if V.equal v canon_v then
+              if Int.equal v canon_v then
                 (* We avoid doing any trivial rewrites. *)
                 canon_term
               else subst ~term:canon_term ~path ~replacement:(var canon_v)
@@ -207,7 +200,7 @@ struct
             (canon_map, canon_term)
         | Some canon_v ->
             let canon_term =
-              if V.equal v canon_v then
+              if Int.equal v canon_v then
                 (* We avoid doing any trivial rewrites. *)
                 canon_term
               else subst ~term:canon_term ~path ~replacement:(var canon_v)
@@ -217,5 +210,5 @@ struct
       term
 
   (* re-export pretty-printer *)
-  let pp fmtr term = pp P.pp V.pp fmtr term
+  let pp fmtr term = pp P.pp fmtr term
 end

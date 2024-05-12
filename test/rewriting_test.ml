@@ -3,7 +3,7 @@ open Arith
 
 (* -------------------- *)
 
-module Patt = Pattern.Make_with_hash_consing (Prim) (Var) (Expr)
+module Patt = Pattern.Make_with_hash_consing (Prim) (Expr)
 
 let add x y = Expr.prim Add [| x; y |]
 
