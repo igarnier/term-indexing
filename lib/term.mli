@@ -44,6 +44,9 @@ module type S = sig
   (** [fold_variables f acc t] folds [f] over the variables of [t]. *)
   val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
+  (** [map_variables f t] maps [f] over the variables of [t]. *)
+  val map_variables : (int -> t) -> t -> t
+
   (** [get_subterm_fwd t p] returns the subterm of [t] at forward path [p]. *)
   val get_subterm_fwd : t -> Path.forward -> t
 

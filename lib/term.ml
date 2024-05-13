@@ -77,6 +77,8 @@ module type S = sig
 
   val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 
+  val map_variables : (int -> t) -> t -> t
+
   val get_subterm_fwd : t -> Path.forward -> t
 
   val get_subterm : t -> Path.t -> t
@@ -161,13 +163,26 @@ module Make_hash_consed
   (* re-export generic fold *)
   let fold = fold
 
-  let fold_variables f acc term =
-    (* TODO optim: use [ub] field to skip recursing in ground subterms *)
-    fold
-      (fun term path acc ->
-        match term.Hashcons.node with Var v -> f v path acc | _ -> acc)
-      acc
-      term
+  let rec fold_variables f acc term path =
+    match term.Hashcons.node with
+    | Var v -> f v path acc
+    | Prim (_, subterms, ub) ->
+        if Int_option.is_none ub then acc
+        else fold_variables_subterms f acc subterms path 0
+
+  and fold_variables_subterms f acc subterms path i =
+    if i = Array.length subterms then acc
+    else
+      let acc = fold_variables f acc subterms.(i) (Path.at_index i path) in
+      fold_variables_subterms f acc subterms path (i + 1)
+
+  let fold_variables f acc term = fold_variables f acc term Path.root
+
+  let rec map_variables f term =
+    match term.Hashcons.node with
+    | Prim (p, subterms, _) ->
+        prim p (Array.map (fun t -> map_variables f t) subterms)
+    | Var v -> f v
 
   (* re-export generic get_subterm_fwd *)
   let get_subterm_fwd = get_subterm_fwd
@@ -202,29 +217,26 @@ module Make_hash_consed
      could batch those rewrites and perform them in one go. *)
   let canon : t -> (unit -> int) -> int M.t * t =
    fun term enum ->
-    fold_variables
-      (fun v path (canon_map, canon_term) ->
-        match M.find_opt v canon_map with
-        | None ->
-            let canon_v = enum () in
-            let canon_map = M.add v canon_v canon_map in
-            let canon_term =
-              if Int.equal v canon_v then
-                (* We avoid doing any trivial rewrites. *)
-                canon_term
-              else subst ~term:canon_term ~path ~replacement:(var canon_v)
-            in
-            (canon_map, canon_term)
-        | Some canon_v ->
-            let canon_term =
-              if Int.equal v canon_v then
-                (* We avoid doing any trivial rewrites. *)
-                canon_term
-              else subst ~term:canon_term ~path ~replacement:(var canon_v)
-            in
-            (canon_map, canon_term))
-      (M.empty (), term)
-      term
+    let acc =
+      fold_variables
+        (fun v _path canon_map ->
+          match M.find_opt v canon_map with
+          | None ->
+              let canon_v = enum () in
+              M.add v canon_v canon_map
+          | Some _ -> canon_map)
+        (M.empty ())
+        term
+    in
+    let result =
+      map_variables
+        (fun v ->
+          match M.find_opt v acc with
+          | None -> assert false
+          | Some canon_v -> var canon_v)
+        term
+    in
+    (acc, result)
 
   (* re-export pretty-printer *)
   let pp fmtr term = pp P.pp fmtr term
