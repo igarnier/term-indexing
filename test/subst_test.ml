@@ -158,20 +158,20 @@ let subst_tree_insert_terms =
   Alcotest.test_case "subst-tree-insert" `Quick (fun () ->
       let index = Index.create () in
       assert (Index.check_invariants index) ;
-      Index.insert (add (float 1.0) (float 1.0)) 0 false index ;
+      let _ = Index.insert (add (float 1.0) (float 1.0)) 0 false index in
       assert (Index.check_invariants index) ;
-      Index.insert (float 1.0) 0 false index ;
+      let _ = Index.insert (float 1.0) 0 false index in
       assert (Index.check_invariants index) ;
-      Index.insert (add (float 1.0) (float 1.0)) 1 true index ;
+      let _ = Index.insert (add (float 1.0) (float 1.0)) 1 true index in
       assert (Index.check_invariants index))
 
 let subst_tree_insert_terms2 =
   Alcotest.test_case "subst-tree-insert-terms-2" `Quick (fun () ->
       let index = Index.create () in
-      Index.insert (neg (var 543159235)) 0 true index ;
-      Index.insert (neg (float ~-.500.0)) 1 true index ;
-      Index.insert (neg (div (float 42.0) (float 73.))) 2 true index ;
-      Index.insert (neg (var 543159235)) 3 true index ;
+      let _ = Index.insert (neg (var 543159235)) 0 true index in
+      let _ = Index.insert (neg (float ~-.500.0)) 1 true index in
+      let _ = Index.insert (neg (div (float 42.0) (float 73.))) 2 true index in
+      let _ = Index.insert (neg (var 543159235)) 3 true index in
       Index.iter
         (fun term data ->
           if Expr.equal term (neg (var 543159235)) then assert (data = 3)
@@ -207,8 +207,8 @@ let subst_tree_insert_random_term =
       try
         Array.iteri
           (fun i t ->
+            let t = Index.insert t i true index in
             Hashtbl.replace table t i ;
-            Index.insert t i true index ;
             assert (Index.check_invariants index))
           terms ;
         Index.iter

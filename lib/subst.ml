@@ -67,7 +67,7 @@ module type Tree_S = sig
       and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
   val mscg_subst : subst -> subst -> (unit -> var) -> subst * subst * subst
 
-  val insert : term -> 'a -> 'a t -> unit
+  val insert : term -> 'a -> 'a t -> term
 
   val iter : (term -> 'a) -> 'a t -> unit
 end
@@ -192,6 +192,13 @@ struct
   let index x = (x lsl 2) + 1
 
   let is_index_variable x = x land 3 = 1
+
+  let gen_index () =
+    let counter = ref 1 in
+    fun () ->
+      let v = !counter in
+      counter := v + 4 ;
+      v
 
   let query x = (x lsl 2) + 2
 
@@ -394,7 +401,9 @@ struct
     insert_aux subst tree.nodes 0
 
   let insert term data may_overwrite tree =
-    insert_subst (S.of_list [(indicator 0, term)]) data may_overwrite tree
+    let (_, term) = T.canon term (gen_index ()) in
+    insert_subst (S.of_list [(indicator 0, term)]) data may_overwrite tree ;
+    term
 
   (* used for tests *)
   let check_invariants tree =
@@ -458,7 +467,6 @@ struct
      _,1,_,_,4,_,_ ... i.e. variables of the form 3k+1 for ub(h)
      _,_,2,                                       3k+2 for indicator variables
      total size: 3 * max(ub(q), 2 * ub(h))
-
   *)
 
   (* exception Not_unifiable *)
