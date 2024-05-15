@@ -95,6 +95,13 @@ let symbol =
        (10, `Div)
     |]
 
+(* This term generator is subtle around variables:
+   - indicator variables generated at a given path are deterministic,
+     this ensures that during mscg computation one cannot have the
+     case of two distinct indicator variable (which cannot happen in practice)
+   - indicator variables are disjoint from non-indicator variables, the latter
+     are not deterministic
+*)
 let term_gen canonical_var : Expr.t Gen.t =
   let float_ = Gen.map float (Gen.float_range (-1000.) 1000.) in
   let try_var path =
@@ -120,12 +127,15 @@ let term_gen canonical_var : Expr.t Gen.t =
                 if indicator then
                   (* We forbid toplevel indicator variables *)
                   if Path.equal path Path.root then float_ else try_var path
-                else small_nat >>= fun i -> return (var i))
+                else small_nat >>= fun i -> return (var ((i * 4) + 1)))
         | `Float -> float_)
     (Path.root, 5)
 
 (* A naive generator *)
-let gen = term_gen (fun path -> Some (Path.hash path))
+let gen =
+  term_gen (fun path ->
+      let hash = Path.hash path in
+      Some (hash mod 100 * 4))
 
 let memoize_enum : int -> Path.t -> int option =
  fun n ->

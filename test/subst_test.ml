@@ -3,13 +3,6 @@
 open Arith
 module Int_map = Lib_rewriting.Int_map
 
-let mkgen ?(start = -1) () =
-  let c = ref start in
-  fun () ->
-    let v = !c in
-    decr c ;
-    v
-
 let diag_idempotent =
   QCheck2.Test.make
     ~name:"mscg-diag-idempotent"
@@ -17,7 +10,7 @@ let diag_idempotent =
     ~count:100
     Arith.gen
     (fun term ->
-      let (res, _, _) = Index.mscg term term (mkgen ()) in
+      let (res, _, _) = Index.mscg term term in
       Expr.equal term res)
 
 let diag_commutative =
@@ -28,42 +21,42 @@ let diag_commutative =
     ~count:100
     (QCheck2.Gen.pair Arith.gen Arith.gen)
     (fun (term1, term2) ->
-      let (res1, _, _) = Index.mscg term1 term2 (mkgen ()) in
-      let (res2, _, _) = Index.mscg term2 term1 (mkgen ()) in
+      let (res1, _, _) = Index.mscg term1 term2 in
+      let (res2, _, _) = Index.mscg term2 term1 in
       Expr.equal res1 res2)
 
 let mscg_case0 =
   Alcotest.test_case "mscg-case0" `Quick (fun () ->
-      let term1 = add (mul (var 0) (var 1)) (var 2) in
-      let term2 = add (div (var 0) (var 1)) (var 2) in
-      let (res, _, _) = Index.mscg term1 term2 (mkgen ()) in
+      let term1 = add (mul (var 1) (var 5)) (var 9) in
+      let term2 = add (div (var 1) (var 5)) (var 9) in
+      let (res, _, _) = Index.mscg term1 term2 in
       match to_native res with
-      | Add (Var -1, Var 2) -> ()
+      | Add (Var 0, Var 9) -> ()
       | _ -> Alcotest.fail "mscg-case0")
 
 let mscg_case1 =
   Alcotest.test_case "mscg-case1" `Quick (fun () ->
-      let term1 = add (mul (var 0) (var 1)) (var 2) in
-      let term2 = mul (mul (var 0) (var 1)) (var 2) in
-      let (res, _, _) = Index.mscg term1 term2 (mkgen ()) in
-      match to_native res with Var -1 -> () | _ -> Alcotest.fail "mscg-case1")
+      let term1 = add (mul (var 1) (var 5)) (var 9) in
+      let term2 = mul (mul (var 1) (var 5)) (var 9) in
+      let (res, _, _) = Index.mscg term1 term2 in
+      match to_native res with Var 0 -> () | _ -> Alcotest.fail "mscg-case1")
 
 let mscg_case2 =
   Alcotest.test_case "mscg-case2" `Quick (fun () ->
-      let term1 = add (mul (var 0) (var 1)) (var 2) in
-      let term2 = add (div (var 0) (var 1)) (div (var 0) (var 1)) in
-      let (res, residual1, residual2) = Index.mscg term1 term2 (mkgen ()) in
+      let term1 = add (mul (var 1) (var 5)) (var 9) in
+      let term2 = add (div (var 1) (var 5)) (div (var 1) (var 5)) in
+      let (res, residual1, residual2) = Index.mscg term1 term2 in
       match to_native res with
-      | Add (Var -1, Var -2) -> (
-          let lexpr1 = Subst.eval_exn (-1) residual1 in
-          let rexpr1 = Subst.eval_exn (-1) residual2 in
-          let lexpr2 = Subst.eval_exn (-2) residual1 in
-          let rexpr2 = Subst.eval_exn (-2) residual2 in
+      | Add (Var 0, Var 4) -> (
+          let lexpr1 = Subst.eval_exn 0 residual1 in
+          let rexpr1 = Subst.eval_exn 0 residual2 in
+          let lexpr2 = Subst.eval_exn 4 residual1 in
+          let rexpr2 = Subst.eval_exn 4 residual2 in
           (match (to_native lexpr1, to_native rexpr1) with
-          | (Mul (Var 0, Var 1), Div (Var 0, Var 1)) -> ()
+          | (Mul (Var 1, Var 5), Div (Var 1, Var 5)) -> ()
           | _ -> Alcotest.fail "mscg-case2: wrong subterm") ;
           match (to_native lexpr2, to_native rexpr2) with
-          | (Var 2, Div (Var 0, Var 1)) -> ()
+          | (Var 9, Div (Var 1, Var 5)) -> ()
           | _ -> Alcotest.fail "mscg-case2: wrong subterm")
       | _ -> Alcotest.fail "mscg-case2: wrong result")
 
@@ -75,6 +68,13 @@ let print_test =
     (fun term ->
       Format.printf "%a@." Subst.pp term ;
       true)
+
+let mkgen ?(start = -1) () =
+  let c = ref start in
+  fun () ->
+    let v = !c in
+    decr c ;
+    v
 
 let mscg_nofail =
   QCheck2.Test.make
@@ -181,8 +181,12 @@ let subst_tree_insert_terms2 =
 let subst_tree_insert_random_term =
   QCheck2.Test.make
     ~name:"subst-tree-insert-random-term"
-    ~count:1_000
-    (QCheck2.Gen.set_shrink (fun _ -> Seq.empty) (QCheck2.Gen.array Arith.gen))
+    ~count:100
+    (QCheck2.Gen.set_shrink
+       (fun _ -> Seq.empty)
+       (QCheck2.Gen.array_size
+          (QCheck2.Gen.return 1_000)
+          (Arith.term_gen (fun _ -> None))))
     (fun terms ->
       let index = Index.create () in
       let table = Hashtbl.create (Array.length terms) in
@@ -249,7 +253,15 @@ let subst_tree_insert_random_term =
             pp_arr
             terms
             pp_table
-            table)
+            table
+      | exn ->
+          QCheck2.Test.fail_reportf
+            "exn %s@.@[%a@]@.Inputs=@.@[%a@]"
+            (Printexc.to_string exn)
+            (Index.pp Format.pp_print_int)
+            index
+            pp_arr
+            terms)
   |> QCheck_alcotest.to_alcotest
 
 let () =

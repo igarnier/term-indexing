@@ -117,6 +117,24 @@ module Make
     | Var v -> (
         match eval v subst with None -> term | Some term -> lift subst term)
 
+  (* exception Occurs_check *)
+  (* let lift subst term = *)
+  (*   let rec lift subst seen (term : term) = *)
+  (*     match term.Hashcons.node with *)
+  (*     | Prim (prim, subterms, _) -> *)
+  (*         T.prim prim (Array.map (lift subst seen) subterms) *)
+  (*     | Var v -> ( *)
+  (*         if List.mem v seen then raise Occurs_check *)
+  (*         else *)
+  (*           match eval v subst with *)
+  (*           | None -> term *)
+  (*           | Some term -> lift subst (v :: seen) term) *)
+  (*   in *)
+  (*   try lift subst [] term *)
+  (*   with Occurs_check -> *)
+  (*     Format.eprintf "lift %a %a invalid@." pp subst T.pp term ; *)
+  (*     raise Occurs_check *)
+
   let union subst1 subst2 =
     let exception Invalid_union in
     try M.union (fun _ _ _ -> raise Invalid_union) subst1 subst2 |> Option.some
@@ -138,12 +156,20 @@ struct
   (* Invariant: keys of a substitution are indicator variables. *)
   type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
 
+  (* TODO: maintain upper bound on variables as we do with terms. *)
   and 'a node =
     { mutable head : subst;
       (* We should be able to index nodes by the head constructor *)
       subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
+
+  (* Invariants:
+     - indicator variables are of the form 4k
+     - variables contained in terms inserted by the user into the index are of the form 4k+1
+     - variables contained in queries are canonicalized to be of the form 4k+2
+     Hence, we have the property that these three sets are always disjoint.
+  *)
 
   (** Substitution trees operate on terms where variables are split into two
       disjoint subsets: variables stemming from the terms inserted by the user
@@ -152,9 +178,26 @@ struct
 
       We define indicator variables as the strictly negative integers.
   *)
-  let indicator x = -(x + 1)
+  let indicator x = x lsl 2
 
-  let is_indicator x = x < 0
+  let is_indicator_variable x = x land 3 = 0
+
+  let gen_indicator () =
+    let counter = ref 0 in
+    fun () ->
+      let v = !counter in
+      counter := v + 4 ;
+      v
+
+  let index x = (x lsl 2) + 1
+
+  let is_index_variable x = x land 3 = 1
+
+  let query x = (x lsl 2) + 2
+
+  let is_query_variable x = x land 3 = 2
+
+  let next x = x + 4
 
   let rec to_box pp_data node =
     let open PrintBox in
@@ -202,11 +245,18 @@ struct
             in
             (T.prim prim1 subterms, residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
+      | (Term.Var v1, Term.Var v2) ->
+          (* This clause is subsumed by the two next ones but we need it to ensure
+             commutativity of [mscg_aux]. *)
+          if is_indicator_variable v1 then (t1, residual1, M.add v1 t2 residual2)
+          else if is_indicator_variable v2 then
+            (t2, M.add v2 t1 residual1, residual2)
+          else generalize t1 t2 gen residual1 residual2
       | (_, Term.Var v) ->
-          if is_indicator v then (t2, M.add v t1 residual1, residual2)
+          if is_indicator_variable v then (t2, M.add v t1 residual1, residual2)
           else generalize t1 t2 gen residual1 residual2
       | (Term.Var v, _) ->
-          if is_indicator v then (t1, residual1, M.add v t2 residual2)
+          if is_indicator_variable v then (t1, residual1, M.add v t2 residual2)
           else generalize t1 t2 gen residual1 residual2
 
   and mscg_subterms subterms1 subterms2 gen residual1 residual2 terms i =
@@ -226,7 +276,7 @@ struct
         (term :: terms)
         (i + 1)
 
-  let mscg t1 t2 gen = mscg_aux t1 t2 gen (M.empty ()) (M.empty ())
+  let mscg t1 t2 = mscg_aux t1 t2 (gen_indicator ()) (M.empty ()) (M.empty ())
 
   let top_symbol_disagrees (t1 : T.t) (t2 : T.t) =
     match (t1.Hashcons.node, t2.Hashcons.node) with
@@ -346,6 +396,7 @@ struct
   let insert term data may_overwrite tree =
     insert_subst (S.of_list [(indicator 0, term)]) data may_overwrite tree
 
+  (* used for tests *)
   let check_invariants tree =
     let exception Fail in
     let rec check_invariants node =
@@ -381,7 +432,34 @@ struct
         f (S.lift subst term) data) ;
     Vec.iter (fun node -> iter_node f subst node) node.subtrees
 
-  let iter f { nodes; _ } = Vec.iter (iter_node f (S.identity ())) nodes
+  let iter f root = Vec.iter (iter_node f (S.identity ())) root.nodes
+
+  (*
+     query: subst with domain in indicator variables (initially domain = -1)
+            and range in normal variables of kind "q"
+     head: subst with domain in indicator variables
+            and range in normal variables of kind "h"
+     We need indicator variables, and normal variables of kind "q" and kind "h" to be
+     considered disjoint and given a contiguous layout in the nonnegative integers (to use
+     efficient union-find data structure).f
+
+     let ub(q) = max over query of variables of kind q
+       => assumption: variables of kind "q" are not negative
+     let ub(h) = max over head of UNION(variables of kind h, indicator variables)
+       => same assumption for variables of kind "h"
+
+     layout ?:
+     [0, ub(q)] for variables of kind q => query term not renamed
+     [ub(q)+1, ub(q)+1+ub(h)-1] for variables of kind h
+     [ub(q)+1+ub(h)+1, ub(q)+1+ub(h)+1+ub(h)] for indicator variables
+
+     other proposal (but induces unused variables in union-find when ub(q) != ub(h) != indicator)
+     0,_,_,3,_,_,6 ... i.e. variables of the form 3k for ub(q)
+     _,1,_,_,4,_,_ ... i.e. variables of the form 3k+1 for ub(h)
+     _,_,2,                                       3k+2 for indicator variables
+     total size: 3 * max(ub(q), 2 * ub(h))
+
+  *)
 
   (* exception Not_unifiable *)
 
@@ -390,22 +468,26 @@ struct
   (*     (fun _v q h -> *)
   (*       match (q, h) with *)
   (*       | (None, None) -> None *)
-  (*       | (Some t, None) -> Some t *)
-  (*       | (None, Some t) -> Some t *)
-  (*       | (Some qt, Some ht) -> unify_terms qt ht) *)
+  (*       | (Some _, None) -> None *)
+  (*       | (None, Some _) -> None *)
+  (*       | (Some qt, Some ht) -> unify_terms qt ht []) *)
   (*     query *)
   (*     head *)
 
-  (* and unify_terms (qt : term) (ht : term) = *)
+  (* and unify_terms (qt : term) (ht : term) eqs = *)
   (*   match (qt.Hashcons.node, ht.Hashcons.node) with *)
-  (*   | (Prim (qp, qvec), Prim (hp, hvec)) -> *)
+  (*   | (Prim (qp, qvec, _), Prim (hp, hvec, _)) -> *)
   (*       if P.equal qp hp then ( *)
-  (*         assert (Vec.length qvec = Vec.length hvec) ; *)
-  (*         for i = 0 to Vec.length qvec - 1 do *)
-  (*           unify (Vec.get qvec i) (Vec.get hvec i) *)
-  (*         done) *)
-  (*       else None *)
-  (*   | Prim _, Var hv -> *)
+  (*         (\* assert (Array.length qvec = Array.length hvec) *\) *)
+  (*         let eqs = ref eqs in *)
+  (*         Array.iter2 (fun qt' ht' -> eqs := unify_terms qt' ht' !eqs) qvec hvec ; *)
+  (*         unify_eqs eqs) *)
+  (*       else raise Not_unifiable *)
+  (*   | (Prim _, Var hv) -> *)
+  (*       (\* [hv] is either an indicator variable or a variable *)
+  (*          from a key. *\) *)
+  (*       assert false *)
+  (*   | _ -> assert false *)
 
   (* TODO *)
   (* let iter_unifiable_node query f tree = *)
