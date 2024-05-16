@@ -67,9 +67,12 @@ module type Tree_S = sig
       and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
   val mscg_subst : subst -> subst -> (unit -> var) -> subst * subst * subst
 
+  (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
+      and returns the canonicalized term. *)
   val insert : term -> 'a -> 'a t -> term
 
-  val iter : (term -> 'a) -> 'a t -> unit
+  (** [iter f index] iterates [f] on the bindings of [index]. *)
+  val iter : (term -> 'a -> unit) -> 'a t -> unit
 end
 
 module Make
