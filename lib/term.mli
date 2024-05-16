@@ -35,6 +35,10 @@ module type S = sig
   (** [var v] constructs a variable equal to [v]. *)
   val var : var -> t
 
+  (** [ub t] is an upper bound on the absolute values of variables contained in [t],
+      or [Int_option.none] if the term is ground. *)
+  val ub : t -> Int_option.t
+
   (** [is_var t] returns [Some v] if [t] is a variable equal to [v]. *)
   val is_var : t -> var option
 

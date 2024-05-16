@@ -71,6 +71,8 @@ module type S = sig
 
   val var : var -> t
 
+  val ub : t -> Int_option.t
+
   val is_var : t -> var option
 
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
