@@ -40,10 +40,11 @@ module type Map = sig
 
   val union : (key -> 'a -> 'a -> 'a option) -> 'a t -> 'a t -> 'a t
 
-  val merge :
-    (key -> 'a option -> 'b option -> 'c option) -> 'a t -> 'b t -> 'c t
+  (** [to_seq m] produces the {b persistent} sequence of elements of [m] in
+      increasing key order. *)
+  val to_seq : 'a t -> (key * 'a) Seq.t
 
-  val of_list : (key * 'a) list -> 'a t
+  val to_seq_keys : 'a t -> key Seq.t
 
-  val to_list : 'a t -> (key * 'a) list
+  val of_seq : (key * 'a) Seq.t -> 'a t
 end

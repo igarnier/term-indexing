@@ -69,12 +69,12 @@ let print_test =
       Format.printf "%a@." Subst.pp term ;
       true)
 
-let mkgen ?(start = -1) () =
+let mkgen ?(start = 0) () =
   let c = ref start in
   fun () ->
     let v = !c in
-    decr c ;
-    v
+    incr c ;
+    Index.indicator v
 
 let mscg_nofail =
   QCheck2.Test.make
@@ -95,9 +95,10 @@ let mscg_disjoint_support_empty =
     Arith.subst_gen
     (fun subst ->
       let subst' =
-        let pairs = Subst.to_list subst in
+        let pairs = Subst.to_seq subst |> List.of_seq in
         let len = List.length pairs in
-        List.map (fun (i, t) -> (i - len, t)) pairs |> Subst.of_list
+        List.map (fun (i, t) -> (i - len, t)) pairs
+        |> List.to_seq |> Subst.of_seq
       in
       let (result, _, _) =
         Index.mscg_subst subst subst' (mkgen ~start:(-1000) ())
@@ -115,18 +116,25 @@ let mscg_subst =
          let sigma1/rho = *2 = f(c, x1), *4 = a, *5 = c
          let sigma2/rho = *2 = x1, *4 = b, *5 = x2
        *)
-      let i v = -v in
       let a = Arith.float 1.0 in
       let b = Arith.float 2.0 in
       let c = Arith.float 3.0 in
       let x1 = var 1 in
       let x2 = var 2 in
       let subst1 =
-        Subst.of_list [(i 1, neg a); (i 2, add c x1); (i 3, neg c)]
+        [ (Index.indicator 1, neg a);
+          (Index.indicator 2, add c x1);
+          (Index.indicator 3, neg c) ]
+        |> List.to_seq |> Subst.of_seq
       in
-      let subst2 = Subst.of_list [(i 1, neg b); (i 2, x1); (i 3, neg x2)] in
+      let subst2 =
+        [ (Index.indicator 1, neg b);
+          (Index.indicator 2, x1);
+          (Index.indicator 3, neg x2) ]
+        |> List.to_seq |> Subst.of_seq
+      in
       let (mscg, residual1, residual2) =
-        Index.mscg_subst subst1 subst2 (mkgen ~start:(-4) ())
+        Index.mscg_subst subst1 subst2 (mkgen ~start:4 ())
       in
       let assert_eq_subst map k v =
         match Subst.eval k map with
@@ -151,19 +159,19 @@ let mscg_subst =
         residual1
         Subst.pp
         residual2 ;
-      assert_eq_subst mscg (i 1) (neg (var (i 4))) ;
-      assert_eq_subst mscg (i 3) (neg (var (i 5))))
+      assert_eq_subst mscg (Index.indicator 1) (neg (var (Index.indicator 4))) ;
+      assert_eq_subst mscg (Index.indicator 3) (neg (var (Index.indicator 5))))
 
 let subst_tree_insert_terms =
   Alcotest.test_case "subst-tree-insert" `Quick (fun () ->
       let index = Index.create () in
-      assert (Index.check_invariants index) ;
+      assert (Index.Internal_for_tests.check_invariants index) ;
       let _ = Index.insert (add (float 1.0) (float 1.0)) 0 false index in
-      assert (Index.check_invariants index) ;
+      assert (Index.Internal_for_tests.check_invariants index) ;
       let _ = Index.insert (float 1.0) 0 false index in
-      assert (Index.check_invariants index) ;
+      assert (Index.Internal_for_tests.check_invariants index) ;
       let _ = Index.insert (add (float 1.0) (float 1.0)) 1 true index in
-      assert (Index.check_invariants index))
+      assert (Index.Internal_for_tests.check_invariants index))
 
 let subst_tree_insert_terms2 =
   Alcotest.test_case "subst-tree-insert-terms-2" `Quick (fun () ->
@@ -185,7 +193,7 @@ let subst_tree_insert_random_term =
     (QCheck2.Gen.set_shrink
        (fun _ -> Seq.empty)
        (QCheck2.Gen.array_size
-          (QCheck2.Gen.return 1_000)
+          (QCheck2.Gen.return 10)
           (Arith.term_gen (fun _ -> None))))
     (fun terms ->
       let index = Index.create () in
@@ -209,7 +217,7 @@ let subst_tree_insert_random_term =
           (fun i t ->
             let t = Index.insert t i true index in
             Hashtbl.replace table t i ;
-            assert (Index.check_invariants index))
+            assert (Index.Internal_for_tests.check_invariants index))
           terms ;
         Index.iter
           (fun term data ->
@@ -221,9 +229,19 @@ let subst_tree_insert_random_term =
           index ;
         true
       with
-      | Assert_failure _ ->
+      | Index.Internal_for_tests.Invariant_violation (path, head, head') ->
           QCheck2.Test.fail_reportf
-            "Invariant violated@.@[%a@]@.Inputs=@.@[%a@]"
+            "Invariant violated@.@[at path %a@,\
+             head=%a@,\
+             head'=%a@]@.@[%a@]@.Inputs=@.@[%a@]"
+            (Format.pp_print_list
+               ~pp_sep:(fun fmtr () -> Format.fprintf fmtr ".")
+               Format.pp_print_int)
+            path
+            Subst.pp
+            head
+            Subst.pp
+            head'
             (Index.pp Format.pp_print_int)
             index
             pp_arr

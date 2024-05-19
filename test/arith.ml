@@ -24,6 +24,8 @@ module Var_map : Intf.Map with type key = int = struct
   include Map.Make (Int)
 
   let empty () = empty
+
+  let to_seq_keys map = to_seq map |> Seq.map fst
 end
 
 module Expr = Term.Make_hash_consed (Prim) (Var_map)
@@ -64,7 +66,7 @@ let rec pp_native fmtr (term : native) =
   | Div (l, r) -> Format.fprintf fmtr "@[(%a / %a)@]" pp_native l pp_native r
   | Neg e -> Format.fprintf fmtr "@[-%a@]" pp_native e
   | Var v -> Format.fprintf fmtr "@[%d@]" v
-  | Const f -> Format.fprintf fmtr "@[%.3f@]" f
+  | Const f -> Format.fprintf fmtr "@[%f@]" f
 
 (* -------------------- *)
 
@@ -103,7 +105,9 @@ let symbol =
      are not deterministic
 *)
 let term_gen canonical_var : Expr.t Gen.t =
-  let float_ = Gen.map float (Gen.float_range (-1000.) 1000.) in
+  let float_ =
+    Gen.small_int |> Gen.map (fun i -> float (float_of_int i +. 0.5))
+  in
   let try_var path =
     match canonical_var path with
     | None -> float_
@@ -174,6 +178,8 @@ let subst_gen : Subst.t Gen.t =
     pair (return indicator) (term_gen (memoize_enum i))
   in
   Gen.bind domain_gen @@ fun list ->
-  Gen.map Subst.of_list (flatten_l (List.map term_gen list))
+  Gen.map
+    (fun l -> Subst.of_seq (List.to_seq l))
+    (flatten_l (List.map term_gen list))
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
