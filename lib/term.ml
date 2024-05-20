@@ -215,8 +215,6 @@ module Make_hash_consed
     subst_aux ~term ~path ~replacement
 
   (* TODO optim: consider using an extensible array from int to int instead of an M.t *)
-  (* TODO optim: this algorithm is potentially quadratic as we perform rewrites on-the-fly. We
-     could batch those rewrites and perform them in one go. *)
   let canon : t -> (unit -> int) -> int M.t * t =
    fun term enum ->
     let acc =
