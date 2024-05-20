@@ -1,9 +1,9 @@
 module type PersistentArray = sig
   type 'a t
 
-  val make : int -> 'a -> 'a t
+  val empty : 'a t
 
-  val get : 'a t -> int -> 'a
+  val get : 'a t -> int -> 'a option
 
   val set : 'a t -> int -> 'a -> 'a t
 
@@ -17,8 +17,6 @@ module Make (A : PersistentArray) : sig
 
   val empty : unit -> t
 
-  val fresh : t -> elt * t
-
   val find : t -> elt -> elt
 
   val union : t -> elt -> elt -> t
@@ -27,16 +25,10 @@ end = struct
 
   type elt = int
 
-  let empty () = { next = 0; rank = A.make 0 0; parent = A.make 0 0 }
-
-  let fresh (h : t) =
-    let next = h.next in
-    let rank = A.push h.rank 0 in
-    let parent = A.push h.parent next in
-    (next, { next = next + 1; rank; parent })
+  let empty () = { next = 0; rank = A.empty; parent = A.empty }
 
   let rec find_aux f i =
-    let fi = A.get f i in
+    let fi = A.get f i |> Option.value ~default:i in
     if fi == i then (f, i)
     else
       let (f, r) = find_aux f fi in
@@ -52,8 +44,8 @@ end = struct
     let cx = find h x in
     let cy = find h y in
     if cx != cy then
-      let rx = A.get h.rank cx in
-      let ry = A.get h.rank cy in
+      let rx = A.get h.rank cx |> Option.value ~default:0 in
+      let ry = A.get h.rank cy |> Option.value ~default:0 in
       if rx > ry then { h with parent = A.set h.parent cy cx }
       else if rx < ry then { h with parent = A.set h.parent cx cy }
       else
@@ -64,16 +56,12 @@ end = struct
     else h
 end
 
-module Array_based = Make (Pvec)
-
 module Map_based = Make (struct
   type 'a t = 'a Int_map.t
 
-  let init n f = Seq.init n (fun i -> (i, f i)) |> Int_map.of_seq
+  let empty = Int_map.empty
 
-  let make n v = init n (fun _ -> v)
-
-  let get a i = Int_map.find i a
+  let get a i = Int_map.find_opt i a
 
   let set a i v = Int_map.add i v a
 

@@ -51,9 +51,34 @@ module type S = sig
       substitutions that are not well-founded. *)
   val lift : t -> term -> term
 
-  (** [union s1 s2] computes the union of [s1] and [s2].
-      Returns [None] if [s1] and [s2] do not have disjoint domains. *)
-  val union : t -> t -> t option
+  (** [union f s1 s2] computes the union of [s1] and [s2], using [f] to merge
+      terms associated to the same variable. *)
+  val union : (var -> term -> term -> term option) -> t -> t -> t
+
+  (** [Unification] contains facilities to perform first-order term unification *)
+  module Unification : sig
+    (** [state] is the type of unification state. *)
+    type state
+
+    (** [Cannot_unify] is raised by {!unify} when a unifier cannot be found. *)
+    exception Cannot_unify
+
+    (** [empty ()] is an empty unification state. *)
+    val empty : unit -> state
+
+    (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
+        a term unifying [t1] and [t2] and an updated {!state}.
+
+        @raise Cannot_unify if no solution was found. *)
+    val unify : term -> term -> state -> term * state
+
+    (** [unify_subst s1 s2 state] unifies substitution [s1] and [s2] in state [state]
+        and returns a substitution unifying [s1] and [s2] and an updated {!state}. *)
+    val unify_subst : t -> t -> state -> t * state
+
+    (** [subst state] returns the substitution underlying the unification state. *)
+    val subst : state -> t
+  end
 end
 
 (** The module type of substitution trees *)
@@ -71,18 +96,6 @@ module type Tree_S = sig
   type 'a t
 
   val create : unit -> 'a t
-
-  (** [mscg term1 term2 freshgen] computes a triple [(result, residual1, residual2)] where
-      [result] is the most spceific common generalization of [term1] and [term2],
-      [residual1] is a substitution such that [result] is equal to [term1] after applying [residual1],
-      and [residual2] is a substitution such that [result] is equal to [term2] after applying [residual2]. *)
-  val mscg : term -> term -> (unit -> var) -> term * subst * subst
-
-  (** [mscg_subst s1 s2 freshgen] computes a triple [(result, residual1, residual2)] where
-      [result] is the most specific common generalization of [s1] and [s2],
-      [residual1] is a substitution such that [result] is equal to [s1] after composing with [residual1],
-      and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
-  val mscg_subst : subst -> subst -> (unit -> var) -> subst * subst * subst
 
   (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
       and returns the canonicalized term. *)
@@ -111,6 +124,20 @@ module type Tree_S = sig
     exception Invariant_violation of int list * subst * subst
 
     val check_invariants : 'a t -> bool
+
+    (** [mscg term1 term2 freshgen] computes a triple [(result, residual1, residual2)] where
+      [result] is the most spceific common generalization of [term1] and [term2],
+      [residual1] is a substitution such that [result] is equal to [term1] after applying [residual1],
+      and [residual2] is a substitution such that [result] is equal to [term2] after applying [residual2]. *)
+    val mscg : term -> term -> (unit -> var) -> term * subst * subst
+
+    (** [mscg_subst s1 s2 freshgen] computes a triple [(result, residual1, residual2)] where
+      [result] is the most specific common generalization of [s1] and [s2],
+      [residual1] is a substitution such that [result] is equal to [s1] after composing with [residual1],
+      and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
+    val mscg_subst : subst -> subst -> (unit -> var) -> subst * subst * subst
+
+    val ub : 'a t -> Int_option.t
   end
 end
 
@@ -123,24 +150,17 @@ module Make
 
   type 'a var_map = 'a T.var_map
 
-  type t = { subst : T.t M.t; ub : Int_option.t }
+  type t = T.t M.t
 
-  let identity () = { subst = M.empty (); ub = Int_option.none }
+  let identity = M.empty
 
-  let is_identity : t -> bool = fun s -> M.is_empty s.subst
+  let is_identity = M.is_empty
 
-  let of_seq l : t =
-    let ub =
-      Seq.fold_left
-        (fun acc (v, t) -> Int_option.(max (of_int (abs v)) (max (T.ub t) acc)))
-        Int_option.none
-        l
-    in
-    { subst = M.of_seq l; ub }
+  let of_seq = M.of_seq
 
-  let to_seq { subst; ub = _ } = M.to_seq subst
+  let to_seq = M.to_seq
 
-  let to_seq_keys { subst; ub = _ } = M.to_seq_keys subst
+  let to_seq_keys = M.to_seq_keys
 
   let pp fmtr subst =
     let pp_binding fmtr (v, t) =
@@ -154,21 +174,24 @@ module Make
          pp_binding)
       (to_seq subst)
 
-  let equal (s1 : t) (s2 : t) =
-    Int_option.equal s1.ub s2.ub && M.equal T.equal s1.subst s2.subst
+  let equal s1 s2 = M.equal T.equal s1 s2
 
-  let ub { ub; subst = _ } = ub
+  let ub subst =
+    Seq.fold_left
+      (fun acc (v, t) -> Int_option.(max (of_int (abs v)) (max (T.ub t) acc)))
+      Int_option.none
+      (to_seq subst)
 
-  let map { subst; ub = _ } = subst
+  let map subst = subst
 
-  let eval v { subst; ub = _ } = M.find_opt v subst
+  let eval = M.find_opt
 
-  let eval_exn v { subst; ub = _ } =
+  let eval_exn v subst =
     match M.find_opt v subst with None -> raise Not_found | Some t -> t
 
-  let add var term { subst; ub } =
-    let ub = Int_option.(max (of_int (abs var)) (max (T.ub term) ub)) in
-    { subst = M.add var term subst; ub }
+  let add k term subst =
+    assert (match term.Hashcons.node with Term.Var v' -> k <> v' | _ -> true) ;
+    M.add k term subst
 
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
@@ -177,30 +200,67 @@ module Make
     | Var v -> (
         match eval v subst with None -> term | Some term -> lift subst term)
 
-  (* exception Occurs_check *)
-  (* let lift subst term = *)
-  (*   let rec lift subst seen (term : term) = *)
-  (*     match term.Hashcons.node with *)
-  (*     | Prim (prim, subterms, _) -> *)
-  (*         T.prim prim (Array.map (lift subst seen) subterms) *)
-  (*     | Var v -> ( *)
-  (*         if List.mem v seen then raise Occurs_check *)
-  (*         else *)
-  (*           match eval v subst with *)
-  (*           | None -> term *)
-  (*           | Some term -> lift subst (v :: seen) term) *)
-  (*   in *)
-  (*   try lift subst [] term *)
-  (*   with Occurs_check -> *)
-  (*     Format.eprintf "lift %a %a invalid@." pp subst T.pp term ; *)
-  (*     raise Occurs_check *)
+  let union = M.union
 
-  let union s1 s2 =
-    let exception Invalid_union in
-    try
-      let map = M.union (fun _ _ _ -> raise Invalid_union) s1.subst s2.subst in
-      Some { subst = map; ub = Int_option.max s1.ub s2.ub }
-    with Invalid_union -> None
+  module Unification = struct
+    type state = { subst : t; uf : Uf.Map_based.t }
+
+    exception Cannot_unify
+
+    let subst { subst; _ } = subst
+
+    let empty () = { subst = identity (); uf = Uf.Map_based.empty () }
+
+    let get_repr var { subst; uf } =
+      let repr = Uf.Map_based.find uf var in
+      eval repr subst
+
+    let rec unify (term1 : term) (term2 : term) (state : state) =
+      if T.equal term1 term2 then (term1, state)
+      else
+        match (term1.Hashcons.node, term2.Hashcons.node) with
+        | ( Term.Prim (prim1, subterms1, _ub1),
+            Term.Prim (prim2, subterms2, _ub2) ) ->
+            if P.equal prim1 prim2 then
+              (* invariant: [Array.length subterms1 = Array.length subterms2] *)
+              let (subterms, state) =
+                unify_subterms subterms1 subterms2 state 0 []
+              in
+              (T.prim prim1 subterms, state)
+            else raise Cannot_unify
+        | (Term.Var v, _) -> (
+            (* v1 <> v2 *)
+            let repr_opt = get_repr v state in
+            match repr_opt with
+            | None -> (term2, { state with subst = add v term2 state.subst })
+            | Some repr -> unify repr term2 state)
+        | (_, Term.Var v) -> (
+            (* v1 <> v2 *)
+            let repr_opt = get_repr v state in
+            match repr_opt with
+            | None -> (term1, { state with subst = add v term1 state.subst })
+            | Some repr -> unify term1 repr state)
+
+    and unify_subterms subterms1 subterms2 (state : state) i acc =
+      if i = Array.length subterms1 then (Array.of_list (List.rev acc), state)
+      else
+        let t1 = subterms1.(i) and t2 = subterms2.(i) in
+        let (t, state) = unify t1 t2 state in
+        unify_subterms subterms1 subterms2 state (i + 1) (t :: acc)
+
+    let unify_subst subst1 subst2 state =
+      let uf_state = ref state in
+      let result =
+        union
+          (fun _key term1 term2 ->
+            let (unified_term, uf_state') = unify term1 term2 !uf_state in
+            uf_state := uf_state' ;
+            Some unified_term)
+          subst1
+          subst2
+      in
+      (result, !uf_state)
+  end
 end
 
 module Make_index
@@ -216,7 +276,6 @@ struct
   (* Invariant: keys of a substitution are indicator variables. *)
   type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
 
-  (* TODO: maintain upper bound on variables as we do with terms. *)
   and 'a node =
     { mutable head : subst;
       (* We should be able to index nodes by the head constructor *)
@@ -414,64 +473,61 @@ struct
       if i >= Vec.length t then
         Vec.push t { head = subst; subtrees = Vec.create (); data = Some data }
       else
-        let ti = Vec.get t i in
-        match ti with
-        | { head; subtrees; data = _ } ->
-            (* [residual1] contains either variables in the domain of [subst] or fresh variables,
-               similarly for [residual2] wrt [head].
-               Those variables correspond either to
-               - variables out the domain of the other substitution,
-               - variables corresponding to incompatible terms
-               - fresh variables mapping to sub-terms witnessing incompatibility.
-               If a variable is in the domain of [result] it is neither in [residual1]
-               or [residual2].
-            *)
-            let (result, residual1, residual2) =
-              mscg_subst subst head (fun () ->
-                  counter := !counter + 1 ;
-                  indicator !counter)
-            in
-            if S.is_identity result then
-              (* [subst] is incompatible with [head], try next sibling
-                 TODO: we might optimize the search by indexing trees by their head constructor for a particular variable.
-                 This is reminiscent of a trie. The heuristic to choose which variable to split would be crucial. *)
-              insert_aux subst t (i + 1)
-            else if S.equal result head then
-              if
-                (* [subst] instantiates (refines) [head]. *)
-                (* Here, [residual1] may only define variables disjoint from [result]. *)
-                S.is_identity residual1
-              then
-                (* [subst] = [result] = [head] *)
-                try_set ti data may_overwrite
-              else insert_aux residual1 subtrees 0
-            else (
-              (* [subst] has a nontrivial mscg
-                 - we replace [head] by [result] ([result] generalizes [head])
-                 - we introduce a new node below the current one labelled by [residual2]
-                 - next to the node labelled by [residual2] we introduce a leaf labelled by [residual1] *)
-              assert (not (S.is_identity residual2)) ;
-              ti.head <- residual2 ;
-              let new_node_children =
-                Vec.of_array
-                  [| ti;
-                     { head = residual1;
-                       subtrees = Vec.create ();
-                       data = Some data
-                     }
-                  |]
-              in
-              let new_node =
-                { head = result; subtrees = new_node_children; data = None }
-              in
-              Vec.set t i new_node)
+        let ({ head; subtrees; data = _ } as ti) = Vec.get t i in
+        (* [residual1] contains either variables in the domain of [subst] or fresh variables,
+           similarly for [residual2] wrt [head].
+           Those variables correspond either to
+           - variables out the domain of the other substitution,
+           - variables corresponding to incompatible terms
+           - fresh variables mapping to sub-terms witnessing incompatibility.
+           If a variable is in the domain of [result] it is neither in [residual1]
+           or [residual2].
+        *)
+        let (result, residual1, residual2) =
+          mscg_subst subst head (fun () ->
+              counter := !counter + 1 ;
+              indicator !counter)
+        in
+        if S.is_identity result then
+          (* [subst] is incompatible with [head], try next sibling
+             TODO: we might optimize the search by indexing trees by their head constructor for a particular variable.
+             This is reminiscent of a trie. The heuristic to choose which variable to split would be crucial. *)
+          insert_aux subst t (i + 1)
+        else if S.equal result head then
+          if
+            (* [subst] instantiates (refines) [head]. *)
+            (* Here, [residual1] may only define variables disjoint from [result]. *)
+            S.is_identity residual1
+          then (* [subst] = [result] = [head] *)
+            try_set ti data may_overwrite
+          else insert_aux residual1 subtrees 0
+        else (
+          (* [subst] has a nontrivial mscg
+             - we replace [head] by [result] ([result] generalizes [head])
+             - we introduce a new node below the current one labelled by [residual2]
+             - next to the node labelled by [residual2] we introduce a leaf labelled by [residual1] *)
+          assert (not (S.is_identity residual2)) ;
+          ti.head <- residual2 ;
+          let new_node_children =
+            Vec.of_array
+              [| ti;
+                 { head = residual1;
+                   subtrees = Vec.create ();
+                   data = Some data
+                 }
+              |]
+          in
+          let new_node =
+            { head = result; subtrees = new_node_children; data = None }
+          in
+          Vec.set t i new_node)
     in
     insert_aux subst tree.nodes 0
 
   let insert term data may_overwrite tree =
     let (_, term) = T.canon term (gen_index ()) in
     insert_subst
-      (S.of_seq (List.to_seq [(indicator 0, term)]))
+      (S.of_seq (Seq.return (indicator 0, term)))
       data
       may_overwrite
       tree ;
@@ -483,9 +539,14 @@ struct
      we can extract the term by evaluating the substitution.
    *)
 
+  let disjoint_union s1 s2 =
+    let exception Not_disjoint in
+    try S.union (fun _ _ -> raise Not_disjoint) s1 s2 |> Option.some
+    with Not_disjoint -> None
+
   let rec iter_node f subst node =
     let subst =
-      match S.union node.head subst with
+      match disjoint_union node.head subst with
       | None -> assert false
       | Some subst -> subst
     in
@@ -526,52 +587,28 @@ struct
 
   (* exception Not_unifiable *)
 
-  (* let rec unify (query : subst) (head : subst) = *)
-  (*   S.merge *)
-  (*     (fun _v q h -> *)
-  (*       match (q, h) with *)
-  (*       | (None, None) -> None *)
-  (*       | (Some _, None) -> None *)
-  (*       | (None, Some _) -> None *)
-  (*       | (Some qt, Some ht) -> unify_terms qt ht []) *)
-  (*     query *)
-  (*     head *)
-
-  (* and unify_terms (qt : term) (ht : term) eqs = *)
-  (*   match (qt.Hashcons.node, ht.Hashcons.node) with *)
-  (*   | (Prim (qp, qvec, _), Prim (hp, hvec, _)) -> *)
-  (*       if P.equal qp hp then ( *)
-  (*         (\* assert (Array.length qvec = Array.length hvec) *\) *)
-  (*         let eqs = ref eqs in *)
-  (*         Array.iter2 (fun qt' ht' -> eqs := unify_terms qt' ht' !eqs) qvec hvec ; *)
-  (*         unify_eqs eqs) *)
-  (*       else raise Not_unifiable *)
-  (*   | (Prim _, Var hv) -> *)
-  (*       (\* [hv] is either an indicator variable or a variable *)
-  (*          from a key. *\) *)
-  (*       assert false *)
-  (*   | _ -> assert false *)
-
-  (* TODO *)
-  (* let iter_unifiable_node query f tree = *)
-  (*   (\* if head is unifiable with current state then *)
-  (*      1) iterate on node.data if relevant *)
-  (*      2) iterate on subtrees *\) *)
-  (*   assert false *)
-
   (* let iter_unifiable query f { nodes; _ } = *)
   (*   Vec.iter (iter_unifiable_node query f) nodes *)
 
-  let iter_unifiable_node (query : term) _f _root =
-    (* Upper bound on the number of variables contained in the term. Used to (re)-dimension
-       union-find. *)
-    (* TODO: it's too annoying to compute the set of variables contained in the tree.
-       Need PVec or something similar. *)
-    let upper_bound = T.ub query in
-    Int_option.max upper_bound
+  let rec iter_unifiable_node (query_subst : subst) f
+      (nodes : 'a node Vec.vector) uf_state =
+    Vec.iter
+      (fun { head; subtrees; data } ->
+        match S.Unification.unify_subst query_subst head uf_state with
+        | exception S.Unification.Cannot_unify -> ()
+        | (refined_subst, uf_state) ->
+            (match data with
+            | None -> ()
+            | Some data ->
+                let term = S.eval_exn (indicator 0) refined_subst in
+                f (S.lift refined_subst term) data) ;
+            iter_unifiable_node refined_subst f subtrees uf_state)
+      nodes
 
   let iter_unifiable (query : term) f root =
-    iter_unifiable_node query f root.nodes
+    let uf_state = S.Unification.empty () in
+    let query_subst = S.of_seq (Seq.return (indicator 0, query)) in
+    iter_unifiable_node query_subst f root.nodes uf_state
 
   module Internal_for_tests = struct
     let indicator = indicator
@@ -599,7 +636,7 @@ struct
         Vec.iteri
           (fun j node' ->
             let head' = node'.head in
-            if not (Option.is_some (S.union head head')) then (
+            if not (Option.is_some (disjoint_union head head')) then (
               Format.printf "head = %a, head' = %a@." S.pp head S.pp head' ;
               raise (Invariant_violation (j :: path, head, head'))) ;
             check_invariants path j node')
@@ -607,5 +644,9 @@ struct
       in
       Vec.iteri (check_invariants []) tree.nodes ;
       true
+
+    let mscg = mscg
+
+    let mscg_subst = mscg_subst
   end
 end

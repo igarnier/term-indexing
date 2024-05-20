@@ -10,7 +10,7 @@ let diag_idempotent =
     ~count:100
     Arith.gen
     (fun term ->
-      let (res, _, _) = Index.mscg term term in
+      let (res, _, _) = Index.Internal_for_tests.mscg term term in
       Expr.equal term res)
 
 let diag_commutative =
@@ -21,15 +21,15 @@ let diag_commutative =
     ~count:100
     (QCheck2.Gen.pair Arith.gen Arith.gen)
     (fun (term1, term2) ->
-      let (res1, _, _) = Index.mscg term1 term2 in
-      let (res2, _, _) = Index.mscg term2 term1 in
+      let (res1, _, _) = Index.Internal_for_tests.mscg term1 term2 in
+      let (res2, _, _) = Index.Internal_for_tests.mscg term2 term1 in
       Expr.equal res1 res2)
 
 let mscg_case0 =
   Alcotest.test_case "mscg-case0" `Quick (fun () ->
       let term1 = add (mul (var 1) (var 5)) (var 9) in
       let term2 = add (div (var 1) (var 5)) (var 9) in
-      let (res, _, _) = Index.mscg term1 term2 in
+      let (res, _, _) = Index.Internal_for_tests.mscg term1 term2 in
       match to_native res with
       | Add (Var 0, Var 9) -> ()
       | _ -> Alcotest.fail "mscg-case0")
@@ -38,14 +38,16 @@ let mscg_case1 =
   Alcotest.test_case "mscg-case1" `Quick (fun () ->
       let term1 = add (mul (var 1) (var 5)) (var 9) in
       let term2 = mul (mul (var 1) (var 5)) (var 9) in
-      let (res, _, _) = Index.mscg term1 term2 in
+      let (res, _, _) = Index.Internal_for_tests.mscg term1 term2 in
       match to_native res with Var 0 -> () | _ -> Alcotest.fail "mscg-case1")
 
 let mscg_case2 =
   Alcotest.test_case "mscg-case2" `Quick (fun () ->
       let term1 = add (mul (var 1) (var 5)) (var 9) in
       let term2 = add (div (var 1) (var 5)) (div (var 1) (var 5)) in
-      let (res, residual1, residual2) = Index.mscg term1 term2 in
+      let (res, residual1, residual2) =
+        Index.Internal_for_tests.mscg term1 term2
+      in
       match to_native res with
       | Add (Var 0, Var 4) -> (
           let lexpr1 = Subst.eval_exn 0 residual1 in
@@ -83,7 +85,11 @@ let mscg_nofail =
     (QCheck2.Gen.pair Arith.subst_gen Arith.subst_gen)
     (fun (subst1, subst2) ->
       try
-        ignore (Index.mscg_subst subst1 subst2 (mkgen ~start:(-1000) ())) ;
+        ignore
+          (Index.Internal_for_tests.mscg_subst
+             subst1
+             subst2
+             (mkgen ~start:(-1000) ())) ;
         true
       with _ -> false)
   |> QCheck_alcotest.to_alcotest
@@ -101,7 +107,10 @@ let mscg_disjoint_support_empty =
         |> List.to_seq |> Subst.of_seq
       in
       let (result, _, _) =
-        Index.mscg_subst subst subst' (mkgen ~start:(-1000) ())
+        Index.Internal_for_tests.mscg_subst
+          subst
+          subst'
+          (mkgen ~start:(-1000) ())
       in
       Subst.is_identity result)
   |> QCheck_alcotest.to_alcotest
@@ -133,8 +142,8 @@ let mscg_subst =
           (Index.indicator 3, neg x2) ]
         |> List.to_seq |> Subst.of_seq
       in
-      let (mscg, residual1, residual2) =
-        Index.mscg_subst subst1 subst2 (mkgen ~start:4 ())
+      let (mscg, _residual1, _residual2) =
+        Index.Internal_for_tests.mscg_subst subst1 subst2 (mkgen ~start:4 ())
       in
       let assert_eq_subst map k v =
         match Subst.eval k map with
@@ -151,14 +160,6 @@ let mscg_subst =
                 Expr.pp
                 v'
       in
-      Format.printf
-        "%a@.%a@.%a@."
-        Subst.pp
-        mscg
-        Subst.pp
-        residual1
-        Subst.pp
-        residual2 ;
       assert_eq_subst mscg (Index.indicator 1) (neg (var (Index.indicator 4))) ;
       assert_eq_subst mscg (Index.indicator 3) (neg (var (Index.indicator 5))))
 
