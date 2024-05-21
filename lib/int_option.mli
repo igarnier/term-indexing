@@ -15,3 +15,5 @@ val is_none : t -> bool
 val max : t -> t -> t
 
 val pp : Format.formatter -> t -> unit
+
+val unsafe_to_int : t -> int

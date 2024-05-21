@@ -16,3 +16,5 @@ let max = Int.max
 let pp fmtr x =
   if is_none x then Format.pp_print_string fmtr "none"
   else Format.fprintf fmtr "some %d" (x - 1)
+
+let unsafe_to_int x = x - 1
