@@ -26,6 +26,9 @@ module type S = sig
   (** [equal] is an O(1) equality test on terms. *)
   val equal : t -> t -> bool
 
+  (** [compare] is an O(1) total order on terms. Note that this is order {b not} structural. *)
+  val compare : t -> t -> int
+
   (** [hash] is an O(1) hash function. *)
   val hash : t -> int
 

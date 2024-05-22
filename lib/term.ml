@@ -65,6 +65,8 @@ module type S = sig
 
   val equal : t -> t -> bool
 
+  val compare : t -> t -> int
+
   val hash : t -> int
 
   val prim : prim -> t array -> t
@@ -129,6 +131,8 @@ module Make_hash_consed
   let table = Hcons.create 1024
 
   let equal (t1 : t) (t2 : t) = t1 == t2
+
+  let compare (t1 : t) (t2 : t) = Int.compare t1.Hashcons.tag t2.Hashcons.tag
 
   let hash t = t.Hashcons.hkey
 
