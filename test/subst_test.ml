@@ -103,14 +103,13 @@ let mscg_disjoint_support_empty =
       let subst' =
         let pairs = Subst.to_seq subst |> List.of_seq in
         let len = List.length pairs in
-        List.map (fun (i, t) -> (i - len, t)) pairs
+        List.map
+          (fun (i, t) -> (i + Index.Internal_for_tests.indicator len, t))
+          pairs
         |> List.to_seq |> Subst.of_seq
       in
       let (result, _, _) =
-        Index.Internal_for_tests.mscg_subst
-          subst
-          subst'
-          (mkgen ~start:(-1000) ())
+        Index.Internal_for_tests.mscg_subst subst subst' (mkgen ~start:1000 ())
       in
       Subst.is_identity result)
   |> QCheck_alcotest.to_alcotest

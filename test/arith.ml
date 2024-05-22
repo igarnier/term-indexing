@@ -131,7 +131,9 @@ let term_gen canonical_var : Expr.t Gen.t =
                 if indicator then
                   (* We forbid toplevel indicator variables *)
                   if Path.equal path Path.root then float_ else try_var path
-                else small_nat >>= fun i -> return (var ((i * 4) + 1)))
+                else
+                  small_nat >>= fun i ->
+                  return (var (Index.Internal_for_tests.index i)))
         | `Float -> float_)
     (Path.root, 5)
 
@@ -139,22 +141,23 @@ let term_gen canonical_var : Expr.t Gen.t =
 let gen =
   term_gen (fun path ->
       let hash = Path.hash path in
-      Some (hash mod 100 * 4))
+      Some (Index.Internal_for_tests.indicator (hash mod 100)))
 
 let memoize_enum : int -> Path.t -> int option =
- fun n ->
+ fun upper_bound ->
   let table = Hashtbl.create 10 in
   let c = ref 0 in
   fun path ->
-    if !c >= n then None
+    if !c >= upper_bound then None
     else
       match Hashtbl.find_opt table path with
       | None ->
           let next = !c in
           incr c ;
-          let indicator = -next - 1 in
-          Hashtbl.add table path indicator ;
-          Some indicator
+          let indic = Index.Internal_for_tests.indicator next in
+          Hashtbl.add table path indic ;
+          assert (indic < Index.Internal_for_tests.indicator upper_bound) ;
+          Some indic
       | Some _ as res -> res
 
 let subst_gen : Subst.t Gen.t =
@@ -174,7 +177,7 @@ let subst_gen : Subst.t Gen.t =
   let make_domain count = List.init count Fun.id in
   let domain_gen = Gen.map make_domain var_count in
   let term_gen i =
-    let indicator = -i - 1 in
+    let indicator = Index.Internal_for_tests.indicator i in
     pair (return indicator) (term_gen (memoize_enum i))
   in
   Gen.bind domain_gen @@ fun list ->
