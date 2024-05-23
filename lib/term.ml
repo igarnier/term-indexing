@@ -15,7 +15,7 @@ let rec pp pp_prim fmtr term =
         pp_prim
         prim
         (pp_print_array
-           ~pp_sep:(fun fmtr () -> fprintf fmtr ";@ ")
+           ~pp_sep:(fun fmtr () -> fprintf fmtr ",@ ")
            (pp pp_prim))
         subterms
 

@@ -67,14 +67,14 @@ module type S = sig
     val empty : unit -> state
 
     (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
-        a term unifying [t1] and [t2] and an updated {!state}.
+        an updated {!state}.
 
         @raise Cannot_unify if no solution was found. *)
-    val unify : term -> term -> state -> term * state
+    val unify : term -> term -> state -> state
 
-    (** [unify_subst s1 s2 state] unifies substitution [s1] and [s2] in state [state]
-        and returns a substitution unifying [s1] and [s2] and an updated {!state}. *)
-    val unify_subst : t -> t -> state -> t * state
+    (** [unify_subst s state] unifies [s] with substitution state [state]
+        and returns an updated {!state}. *)
+    val unify_subst : t -> state -> state
 
     (** [subst state] returns the substitution underlying the unification state. *)
     val subst : state -> t
@@ -166,12 +166,8 @@ module Make
     let pp_binding fmtr (v, t) =
       Format.fprintf fmtr "@[<hov 2>%a ->@ @[%a@]@]" T.pp (T.var v) T.pp t
     in
-    Format.fprintf
+    (Fmt.brackets (Fmt.seq ~sep:Fmt.semi (Fmt.vbox pp_binding)))
       fmtr
-      "{@[@,%a@,@]}"
-      (Format.pp_print_seq
-         ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
-         pp_binding)
       (to_seq subst)
 
   let equal s1 s2 = M.equal T.equal s1 s2
@@ -223,43 +219,37 @@ module Make
             Term.Prim (prim2, subterms2, _ub2) ) ->
             if P.equal prim1 prim2 then
               (* invariant: [Array.length subterms1 = Array.length subterms2] *)
-              let (subterms, state) =
-                unify_subterms subterms1 subterms2 state 0 []
-              in
-              (T.prim prim1 subterms, state)
+              unify_subterms subterms1 subterms2 state 0
             else raise Cannot_unify
         | (Term.Var v, _) -> (
             (* v1 <> v2 *)
             let repr_opt = get_repr v state in
             match repr_opt with
-            | None -> (term2, { state with subst = add v term2 state.subst })
+            | None -> { state with subst = add v term2 state.subst }
             | Some repr -> unify repr term2 state)
         | (_, Term.Var v) -> (
             (* v1 <> v2 *)
             let repr_opt = get_repr v state in
             match repr_opt with
-            | None -> (term1, { state with subst = add v term1 state.subst })
+            | None -> { state with subst = add v term1 state.subst }
             | Some repr -> unify term1 repr state)
 
-    and unify_subterms subterms1 subterms2 (state : state) i acc =
-      if i = Array.length subterms1 then (Array.of_list (List.rev acc), state)
+    and unify_subterms subterms1 subterms2 (state : state) i =
+      if i = Array.length subterms1 then state
       else
         let t1 = subterms1.(i) and t2 = subterms2.(i) in
-        let (t, state) = unify t1 t2 state in
-        unify_subterms subterms1 subterms2 state (i + 1) (t :: acc)
+        let state = unify t1 t2 state in
+        unify_subterms subterms1 subterms2 state (i + 1)
 
-    let unify_subst subst1 subst2 state =
-      let uf_state = ref state in
-      let result =
-        union
-          (fun _key term1 term2 ->
-            let (unified_term, uf_state') = unify term1 term2 !uf_state in
-            uf_state := uf_state' ;
-            Some unified_term)
-          subst1
-          subst2
-      in
-      (result, !uf_state)
+    let unify_subst (subst : t) (state : state) =
+      Seq.fold_left
+        (fun state (v, t) ->
+          let repr_opt = get_repr v state in
+          match repr_opt with
+          | None -> { state with subst = add v t state.subst }
+          | Some repr -> unify repr t state)
+        state
+        (M.to_seq subst)
   end
 end
 
@@ -322,6 +312,13 @@ struct
   let query x = (x lsl 2) + 2
 
   let is_query_variable x = x land 3 = 2
+
+  let gen_query_variable () =
+    let counter = ref 2 in
+    fun () ->
+      let v = !counter in
+      counter := v + 4 ;
+      v
 
   let next x = x + 4
 
@@ -585,30 +582,28 @@ struct
      total size: 3 * max(ub(q), 2 * ub(h))
   *)
 
-  (* exception Not_unifiable *)
-
-  (* let iter_unifiable query f { nodes; _ } = *)
-  (*   Vec.iter (iter_unifiable_node query f) nodes *)
-
-  let rec iter_unifiable_node (query_subst : subst) f
-      (nodes : 'a node Vec.vector) uf_state =
+  let rec iter_unifiable_node f (nodes : 'a node Vec.vector) uf_state =
     Vec.iter
       (fun { head; subtrees; data } ->
-        match S.Unification.unify_subst query_subst head uf_state with
+        match S.Unification.unify_subst head uf_state with
         | exception S.Unification.Cannot_unify -> ()
-        | (refined_subst, uf_state) ->
+        | uf_state ->
+            let subst = S.Unification.subst uf_state in
             (match data with
             | None -> ()
             | Some data ->
-                let term = S.eval_exn (indicator 0) refined_subst in
-                f (S.lift refined_subst term) data) ;
-            iter_unifiable_node refined_subst f subtrees uf_state)
+                let term = S.eval_exn (indicator 0) subst in
+                f (S.lift subst term) data) ;
+            iter_unifiable_node f subtrees uf_state)
       nodes
 
   let iter_unifiable (query : term) f root =
-    let uf_state = S.Unification.empty () in
+    let (_, query) = T.canon query (gen_query_variable ()) in
     let query_subst = S.of_seq (Seq.return (indicator 0, query)) in
-    iter_unifiable_node query_subst f root.nodes uf_state
+    let state =
+      S.Unification.unify_subst query_subst (S.Unification.empty ())
+    in
+    iter_unifiable_node f root.nodes state
 
   module Internal_for_tests = struct
     let indicator = indicator

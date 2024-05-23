@@ -172,7 +172,7 @@ module Unification = struct
 
   let unify t0 t1 =
     let state = U.empty () in
-    try fst (U.unify t0 t1 state)
+    try U.unify t0 t1 state
     with U.Cannot_unify ->
       QCheck.Test.fail_reportf
         "could not unify:@.t0: %a@.t1: %a@."
