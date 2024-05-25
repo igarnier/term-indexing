@@ -70,12 +70,11 @@ struct
 
   type subst = S.t
 
-  (* Invariant: keys of a substitution are indicator variables. *)
   type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
 
   and 'a node =
-    { mutable head : subst;
-      (* We should be able to index nodes by the head constructor *)
+    { (* Invariant: keys of a substitution are indicator variables. *)
+      mutable head : subst;
       subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
@@ -91,8 +90,6 @@ struct
       disjoint subsets: variables stemming from the terms inserted by the user
       and so-called 'indicator' variables, which constitute the domain of the
       substitutions and denote sharing among sub-trees.
-
-      We define indicator variables as the strictly negative integers.
   *)
   let indicator x = x lsl 2
 
