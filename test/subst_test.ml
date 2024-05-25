@@ -19,7 +19,7 @@ module Subst_tests = struct
         let fill list =
           List.fold_left
             (fun acc (v, t) -> Subst.add v t acc)
-            (Subst.identity ())
+            (Subst.empty ())
             list
         in
         let subst1 =
@@ -33,7 +33,7 @@ module Subst_tests = struct
   let seq_inverse =
     Alcotest.test_case "subst-seq-inverse" `Quick (fun () ->
         let subst =
-          Subst.of_seq (List.to_seq [(0, var 0); (1, var 1); (2, var 2)])
+          Subst.of_seq (List.to_seq [(0, var 10); (1, var 11); (2, var 12)])
         in
         let subst' = Subst.to_seq subst |> Subst.of_seq in
         if not (Subst.equal subst subst') then
@@ -44,10 +44,10 @@ module Subst_tests = struct
     Alcotest.test_case "subst-seq-shadow-earlier-bindings" `Quick (fun () ->
         let subst1 =
           Subst.of_seq
-            (List.to_seq [(0, var 0); (1, var 1); (2, var 2); (0, var 3)])
+            (List.to_seq [(0, var 10); (1, var 11); (2, var 12); (0, var 13)])
         in
         let subst2 =
-          Subst.of_seq (List.to_seq [(1, var 1); (2, var 2); (0, var 3)])
+          Subst.of_seq (List.to_seq [(1, var 11); (2, var 12); (0, var 13)])
         in
         if not (Subst.equal subst1 subst2) then
           Alcotest.failf "Unexpected: %a <> %a" Subst.pp subst1 Subst.pp subst2

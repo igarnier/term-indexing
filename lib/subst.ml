@@ -20,11 +20,11 @@ module type S = sig
 
   val pp : Format.formatter -> t -> unit
 
-  (** [identity ()] is the identity substitution.  *)
-  val identity : unit -> t
+  (** [empty ()] is the empty substitution.  *)
+  val empty : unit -> t
 
-  (** [is_identity subst] checks whether [equal subst identity] *)
-  val is_identity : t -> bool
+  (** [is_empty subst] checks whether [equal subst empty] *)
+  val is_empty : t -> bool
 
   val equal : t -> t -> bool
 
@@ -57,9 +57,10 @@ module type S = sig
       substitutions that are not well-founded. *)
   val lift : t -> term -> term
 
-  (** [union f s1 s2] computes the union of [s1] and [s2], using [f] to merge
-      terms associated to the same variable. *)
-  val union : (var -> term -> term -> term option) -> t -> t -> t
+  (** [union s1 s2] computes the union of [s1] and [s2].
+
+      @raise Invalid_argument if [s1] and [s2] have overlapping domains. *)
+  val union : t -> t -> t
 
   (** [Unification] contains facilities to perform first-order term unification *)
   module Unification : sig
@@ -164,9 +165,9 @@ module Make
 
   type t = T.t M.t
 
-  let identity = M.empty
+  let empty = M.empty
 
-  let is_identity = M.is_empty
+  let is_empty = M.is_empty
 
   let to_seq = M.to_seq
 
@@ -203,8 +204,7 @@ module Make
 
   let unsafe_add k term subst = M.add k term subst
 
-  let of_seq seq =
-    Seq.fold_left (fun acc (v, t) -> add v t acc) (identity ()) seq
+  let of_seq seq = Seq.fold_left (fun acc (v, t) -> add v t acc) (empty ()) seq
 
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
@@ -225,7 +225,7 @@ module Make
 
     let subst { subst; _ } = subst
 
-    let empty () = { subst = identity (); uf = Uf.Map_based.empty () }
+    let empty () = { subst = empty (); uf = Uf.Map_based.empty () }
 
     let get_repr var { subst; uf } =
       let repr = Uf.Map_based.find uf var in
@@ -455,8 +455,7 @@ struct
         (term :: terms)
         (i + 1)
 
-  let mscg t1 t2 =
-    mscg_aux t1 t2 (gen_indicator ()) (S.identity ()) (S.identity ())
+  let mscg t1 t2 = mscg_aux t1 t2 (gen_indicator ()) (S.empty ()) (S.empty ())
 
   let top_symbol_disagrees (t1 : T.t) (t2 : T.t) =
     match (t1.Hashcons.node, t2.Hashcons.node) with
@@ -502,12 +501,7 @@ struct
     and add_to_subst (subst : subst) rest =
       Seq.fold_left (fun acc (v, t) -> S.add v t acc) subst rest
     in
-    loop
-      (S.to_seq s1)
-      (S.to_seq s2)
-      (S.identity ())
-      (S.identity ())
-      (S.identity ())
+    loop (S.to_seq s1) (S.to_seq s2) (S.empty ()) (S.empty ()) (S.empty ())
 
   let try_set tree data may_overwrite =
     if may_overwrite then tree.data <- Some data
@@ -519,7 +513,7 @@ struct
   let insert_subst (subst : subst) (data : 'a) (may_overwrite : bool)
       (tree : 'a tree) =
     let counter = tree.fresh in
-    assert (not (S.is_identity subst)) ;
+    assert (not (S.is_empty subst)) ;
     (* We insert [subst] in the tree, possibly refining existing nodes. *)
     let rec insert_aux (subst : subst) (t : 'a node Vec.vector) i =
       if i >= Vec.length t then
@@ -540,7 +534,7 @@ struct
               counter := !counter + 1 ;
               indicator !counter)
         in
-        if S.is_identity result then
+        if S.is_empty result then
           (* [subst] is incompatible with [head], try next sibling
              TODO: we might optimize the search by indexing trees by their head constructor for a particular variable.
              This is reminiscent of a trie. The heuristic to choose which variable to split would be crucial. *)
@@ -549,7 +543,7 @@ struct
           if
             (* [subst] instantiates (refines) [head]. *)
             (* Here, [residual1] may only define variables disjoint from [result]. *)
-            S.is_identity residual1
+            S.is_empty residual1
           then (* [subst] = [result] = [head] *)
             try_set ti data may_overwrite
           else insert_aux residual1 subtrees 0
@@ -558,7 +552,7 @@ struct
              - we replace [head] by [result] ([result] generalizes [head])
              - we introduce a new node below the current one labelled by [residual2]
              - next to the node labelled by [residual2] we introduce a leaf labelled by [residual1] *)
-          assert (not (S.is_identity residual2)) ;
+          assert (not (S.is_empty residual2)) ;
           ti.head <- residual2 ;
           let new_node_children =
             Vec.of_array
@@ -591,17 +585,9 @@ struct
      we can extract the term by evaluating the substitution.
    *)
 
-  let disjoint_union s1 s2 =
-    let exception Not_disjoint in
-    try S.union (fun _ _ -> raise Not_disjoint) s1 s2 |> Option.some
-    with Not_disjoint -> None
-
   let rec iter_node f subst node =
-    let subst =
-      match disjoint_union node.head subst with
-      | None -> assert false
-      | Some subst -> subst
-    in
+    (* invariant: [node.head] and [subst] have disjoint domains. *)
+    let subst = S.union node.head subst in
     (match node.data with
     | None -> ()
     | Some data ->
@@ -609,7 +595,7 @@ struct
         f (S.lift subst term) data) ;
     Vec.iter (fun node -> iter_node f subst node) node.subtrees
 
-  let iter f root = Vec.iter (iter_node f (S.identity ())) root.nodes
+  let iter f root = Vec.iter (iter_node f (S.empty ())) root.nodes
 
   (*
      query: subst with domain in indicator variables (initially domain = -1)
@@ -683,6 +669,12 @@ struct
 
     exception Invariant_violation of int list * subst * subst
 
+    let try_union s s' =
+      try
+        ignore (S.union s s') ;
+        true
+      with Invalid_argument _ -> false
+
     let check_invariants tree =
       let rec check_invariants path i node =
         let path = i :: path in
@@ -690,7 +682,7 @@ struct
         Vec.iteri
           (fun j node' ->
             let head' = node'.head in
-            if not (Option.is_some (disjoint_union head head')) then (
+            if not (try_union head head') then (
               Format.printf "head = %a, head' = %a@." S.pp head S.pp head' ;
               raise (Invariant_violation (j :: path, head, head'))) ;
             check_invariants path j node')

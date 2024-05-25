@@ -107,7 +107,7 @@ module Mscg_tests = struct
             subst'
             (mkgen ~start:1000 ())
         in
-        Subst.is_identity result)
+        Subst.is_empty result)
     |> QCheck_alcotest.to_alcotest
 
   let mscg_subst =

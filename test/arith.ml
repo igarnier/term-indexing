@@ -26,6 +26,12 @@ module Var_map : Intf.Map with type key = int = struct
   let empty () = empty
 
   let to_seq_keys map = to_seq map |> Seq.map fst
+
+  let union m1 m2 =
+    union
+      (fun _ _ _ -> invalid_arg "Var_map.union: maps have overlapping domains")
+      m1
+      m2
 end
 
 module Expr = Term.Make_hash_consed (Prim) (Var_map)
