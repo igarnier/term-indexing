@@ -138,6 +138,45 @@ module Unification = struct
           ~expected:(add (add one one) one)
           (add (add (var 0) (var 0)) one)
           (add (var 1) (var 0)))
+
+  let generalize_diag =
+    QCheck2.Test.make
+      ~name:"generalize-diag"
+      ~count:100
+      (Arith.term_gen (fun _ -> None))
+      (fun term ->
+        ignore (U.generalize term term) ;
+        true)
+    |> QCheck_alcotest.to_alcotest
+
+  let generalize t1 t2 =
+    if U.generalize t1 t2 then ()
+    else
+      QCheck.Test.fail_reportf "expected success: %a, %a" Expr.pp t1 Expr.pp t2
+
+  let generalize_fail t1 t2 =
+    if not (U.generalize t1 t2) then ()
+    else
+      QCheck.Test.fail_reportf "expected failure: %a, %a" Expr.pp t1 Expr.pp t2
+
+  let check_generalize t1 t2 =
+    generalize t1 t2 ;
+    generalize_fail t2 t1
+
+  let generalize_cases =
+    Alcotest.test_case "generalize-cases" `Quick (fun () ->
+        let one = float 1.0 in
+        let term = add (mul one one) (div one one) in
+        check_generalize (add (mul (var 0) (var 0)) (div (var 0) (var 0))) term ;
+        generalize_fail (add (var 0) (div (var 0) (var 0))) term ;
+        generalize_fail (add (var 0) (var 0)) term ;
+        check_generalize (add (var 0) (var 1)) term ;
+        check_generalize
+          (add (mul (var 0) (var 0)) (div (var 1) (var 1)))
+          (add (mul (var 0) (var 0)) (div (var 0) (var 0))) ;
+        check_generalize
+          (add (mul (var 0) (var 1)) (div (var 2) (var 3)))
+          (add (mul (var 0) (var 0)) (div (var 0) (var 0))))
 end
 
 let () =
@@ -154,4 +193,6 @@ let () =
           [ unification_diag;
             unification_case_1;
             unification_case_2;
-            unification_case_3 ] ) ]
+            unification_case_3;
+            generalize_diag;
+            generalize_cases ] ) ]

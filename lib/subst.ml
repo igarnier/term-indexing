@@ -83,11 +83,9 @@ module type S = sig
         and returns an updated {!state}. *)
     val unify_subst : t -> state -> state
 
-    (** [generalize t1 t2 subst] extends [subst] into a substitution such that [lift t1 subst = t2] or
-        raises [Cannot_unify] if it cannot proceed to this extension.CCArray
-
-        @raise Cannot_unify if no solution was found. *)
-    val generalize : term -> term -> t -> t
+    (** [generalize t1 t2] checks that there exists a substitution [subst]
+        such that [lift t1 subst = t2]. *)
+    val generalize : term -> term -> bool
 
     (** [subst state] returns the substitution underlying the unification state. *)
     val subst : state -> t
@@ -212,27 +210,35 @@ module Make
         let state = unify t1 t2 state in
         unify_subterms subterms1 subterms2 state (i + 1)
 
-    let rec generalize (term1 : term) (term2 : term) subst =
+    let rec generalize (term1 : term) (term2 : term)
+        (table : (int, term) Hashtbl.t) =
       match (term1.Hashcons.node, term2.Hashcons.node) with
       | (Term.Prim (prim1, subterms1, _ub1), Term.Prim (prim2, subterms2, _ub2))
         ->
           if P.equal prim1 prim2 then
             (* invariant: [Array.length subterms1 = Array.length subterms2] *)
-            generalize_subterms subterms1 subterms2 subst 0
-          else raise Cannot_unify
-      | (Term.Prim _, _) -> raise Cannot_unify
-      | (Term.Var v, Term.Var v') when v = v' -> subst
+            generalize_subterms subterms1 subterms2 table 0
+          else false
+      | (Term.Prim _, _) -> false
       | (Term.Var v, _) -> (
-          match eval v subst with
-          | None -> add v term2 subst
-          | Some t -> generalize t term2 subst)
+          match Hashtbl.find_opt table v with
+          | None ->
+              Hashtbl.add table v term2 ;
+              true
+          | Some t -> T.equal t term2)
 
-    and generalize_subterms subterms1 subterms2 subst i =
-      if i = Array.length subterms1 then subst
+    and generalize_subterms subterms1 subterms2 table i =
+      if i = Array.length subterms1 then true
       else
         let t1 = subterms1.(i) and t2 = subterms2.(i) in
-        let subst = generalize t1 t2 subst in
-        generalize_subterms subterms1 subterms2 subst (i + 1)
+        generalize t1 t2 table
+        && generalize_subterms subterms1 subterms2 table (i + 1)
+
+    let generalize term1 term2 =
+      let ub =
+        Int_option.elim (Int_option.max (T.ub term1) (T.ub term2)) 0 Fun.id
+      in
+      generalize term1 term2 (Hashtbl.create (2 * ub))
 
     let unify_subst (subst : t) (state : state) =
       Seq.fold_left
