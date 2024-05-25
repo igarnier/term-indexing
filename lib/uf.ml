@@ -21,11 +21,11 @@ module Make (A : PersistentArray) : sig
 
   val union : t -> elt -> elt -> t
 end = struct
-  type t = { next : int; rank : int A.t; mutable parent : int A.t }
+  type t = { rank : int A.t; mutable parent : int A.t }
 
   type elt = int
 
-  let empty () = { next = 0; rank = A.empty; parent = A.empty }
+  let empty () = { rank = A.empty; parent = A.empty }
 
   let rec find_aux f i =
     let fi = A.get f i |> Option.value ~default:i in
@@ -48,11 +48,7 @@ end = struct
       let ry = A.get h.rank cy |> Option.value ~default:0 in
       if rx > ry then { h with parent = A.set h.parent cy cx }
       else if rx < ry then { h with parent = A.set h.parent cx cy }
-      else
-        { next = h.next;
-          rank = A.set h.rank cx (rx + 1);
-          parent = A.set h.parent cy cx
-        }
+      else { rank = A.set h.rank cx (rx + 1); parent = A.set h.parent cy cx }
     else h
 end
 
