@@ -20,8 +20,10 @@ module type S = sig
 
   val pp : Format.formatter -> t -> unit
 
+  (** [identity ()] is the identity substitution.  *)
   val identity : unit -> t
 
+  (** [is_identity subst] checks whether [equal subst identity] *)
   val is_identity : t -> bool
 
   val equal : t -> t -> bool
@@ -30,8 +32,8 @@ module type S = sig
       (either in the domain or the range of the substitution). *)
   val ub : t -> Int_option.t
 
-  (** [map subst] returns the underlying map of the substitution. *)
-  val map : t -> term var_map
+  (** [underlying_map subst] returns the underlying map of the substitution. *)
+  val underlying_map : t -> term var_map
 
   (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
       or [None] if [v] is not in the domain of [subst]. *)
@@ -43,8 +45,12 @@ module type S = sig
 
   (** [add v t subst] adds a mapping from [v] to [t] in [subst].
       If [v] is already in the domain of [subst], the previous mapping is replaced.
-  *)
+
+      @raise Invalid_argument if [t] is a variable equal to [v] *)
   val add : var -> term -> t -> t
+
+  (** [unsafe_add] does as {!add} but doen't check for validity of the mapping. *)
+  val unsafe_add : var -> term -> t -> t
 
   (** [lift subst term] applies the substitution [subst] to [term].
       Note that [lift] does not perform an occur check: do not use it with
@@ -75,6 +81,12 @@ module type S = sig
     (** [unify_subst s state] unifies [s] with substitution state [state]
         and returns an updated {!state}. *)
     val unify_subst : t -> state -> state
+
+    (** [generalize t1 t2 subst] extends [subst] into a substitution such that [lift t1 subst = t2] or
+        raises [Cannot_unify] if it cannot proceed to this extension.CCArray
+
+        @raise Cannot_unify if no solution was found. *)
+    val generalize : term -> term -> t -> t
 
     (** [subst state] returns the substitution underlying the unification state. *)
     val subst : state -> t
@@ -156,8 +168,6 @@ module Make
 
   let is_identity = M.is_empty
 
-  let of_seq = M.of_seq
-
   let to_seq = M.to_seq
 
   let to_seq_keys = M.to_seq_keys
@@ -178,7 +188,7 @@ module Make
       Int_option.none
       (to_seq subst)
 
-  let map subst = subst
+  let underlying_map subst = subst
 
   let eval = M.find_opt
 
@@ -186,13 +196,23 @@ module Make
     match M.find_opt v subst with None -> raise Not_found | Some t -> t
 
   let add k term subst =
-    assert (match term.Hashcons.node with Term.Var v' -> k <> v' | _ -> true) ;
+    (match term.Hashcons.node with
+    | Term.Var v' -> if Int.equal k v' then invalid_arg "add"
+    | _ -> ()) ;
     M.add k term subst
+
+  let unsafe_add k term subst = M.add k term subst
+
+  let of_seq seq =
+    Seq.fold_left (fun acc (v, t) -> add v t acc) (identity ()) seq
 
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
     match term.Hashcons.node with
-    | Prim (prim, subterms, _) -> T.prim prim (Array.map (lift subst) subterms)
+    | Prim (prim, subterms, ub) ->
+        (* Optimization: if the term is ground then no need to recurse. *)
+        if Int_option.is_none ub then term
+        else T.prim prim (Array.map (lift subst) subterms)
     | Var v -> (
         match eval v subst with None -> term | Some term -> lift subst term)
 
@@ -251,6 +271,28 @@ module Make
         let t1 = subterms1.(i) and t2 = subterms2.(i) in
         let state = unify t1 t2 state in
         unify_subterms subterms1 subterms2 state (i + 1)
+
+    let rec generalize (term1 : term) (term2 : term) subst =
+      match (term1.Hashcons.node, term2.Hashcons.node) with
+      | (Term.Prim (prim1, subterms1, _ub1), Term.Prim (prim2, subterms2, _ub2))
+        ->
+          if P.equal prim1 prim2 then
+            (* invariant: [Array.length subterms1 = Array.length subterms2] *)
+            generalize_subterms subterms1 subterms2 subst 0
+          else raise Cannot_unify
+      | (Term.Prim _, _) -> raise Cannot_unify
+      | (Term.Var v, Term.Var v') when v = v' -> subst
+      | (Term.Var v, _) -> (
+          match eval v subst with
+          | None -> add v term2 subst
+          | Some t -> generalize t term2 subst)
+
+    and generalize_subterms subterms1 subterms2 subst i =
+      if i = Array.length subterms1 then subst
+      else
+        let t1 = subterms1.(i) and t2 = subterms2.(i) in
+        let subst = generalize t1 t2 subst in
+        generalize_subterms subterms1 subterms2 subst (i + 1)
 
     let unify_subst (subst : t) (state : state) =
       Seq.fold_left
@@ -617,6 +659,10 @@ struct
       S.Unification.unify_subst query_subst (S.Unification.empty ())
     in
     iter_unifiable_node f root.nodes state
+
+  (*
+     TODO: iter_specialization, iter_generalization
+   *)
 
   module Internal_for_tests = struct
     let indicator = indicator
