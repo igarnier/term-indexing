@@ -193,6 +193,21 @@ module Unification = struct
         t1
     with U.Cannot_unify -> ()
 
+  let unify_expect ~expected t0 t1 =
+    let state = U.empty () in
+    try
+      let state = U.unify t0 t1 state in
+      if not (alpha_eq (Subst.lift (U.subst state) t0) expected) then
+        QCheck.Test.fail_reportf "expected: %a, got %a@." Expr.pp t0 Expr.pp t1
+      else ()
+    with U.Cannot_unify ->
+      QCheck.Test.fail_reportf
+        "could not unify:@.t0: %a@.t1: %a@."
+        Expr.pp
+        t0
+        Expr.pp
+        t1
+
   let unification_diag =
     QCheck2.Test.make
       ~name:"unification-diag"
@@ -203,8 +218,8 @@ module Unification = struct
         true)
     |> QCheck_alcotest.to_alcotest
 
-  let unification_cases =
-    Alcotest.test_case "unification-cases" `Quick (fun () ->
+  let unification_case_1 =
+    Alcotest.test_case "unification-case-1" `Quick (fun () ->
         let one = float 1.0 in
         let two = float 2.0 in
         let t0 = add one one in
@@ -215,6 +230,27 @@ module Unification = struct
         fail_unify t1 (add two (var 0)) ;
         fail_unify t0 t1 ;
         fail_unify (add (var 0) one) (add one two))
+
+  let unification_case_2 =
+    Alcotest.test_case "unification-case-2" `Quick (fun () ->
+        let state = U.empty () in
+        let state = U.unify (var 0) (var 1) state in
+        let state = U.unify (var 1) (var 2) state in
+        let state = U.unify (var 0) (float 1.0) state in
+        try
+          let _state = U.unify (var 2) (float 2.0) state in
+          Alcotest.fail "unification-case-2: expected failure"
+        with U.Cannot_unify -> ())
+
+  let unification_case_3 =
+    Alcotest.test_case "unification-case-3" `Quick (fun () ->
+        let one = float 1.0 in
+        let two = float 2.0 in
+        unify_expect ~expected:(add one two) (add (var 0) two) (add one (var 1)) ;
+        unify_expect
+          ~expected:(add (add one one) one)
+          (add (add (var 0) (var 0)) one)
+          (add (var 1) (var 0)))
 end
 
 let () =
@@ -225,4 +261,9 @@ let () =
       ("mscg-cases", [mscg_case0; mscg_case1; mscg_case2]);
       ("subst-print", conv [print_test]);
       ("mscg-subst", [mscg_nofail; mscg_disjoint_support_empty; mscg_subst]);
-      ("unification", Unification.[unification_diag; unification_cases]) ]
+      ( "unification",
+        Unification.
+          [ unification_diag;
+            unification_case_1;
+            unification_case_2;
+            unification_case_3 ] ) ]

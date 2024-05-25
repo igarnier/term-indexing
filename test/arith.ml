@@ -47,6 +47,29 @@ let float f = Expr.prim (Prim.Float f) [||]
 
 let var s = Expr.var s
 
+let mkgen () =
+  let c = ref 0 in
+  fun () ->
+    let v = !c in
+    c := !c + 1 ;
+    v
+
+let alpha_eq t1 t2 =
+  let (_, t1) = Expr.canon t1 (mkgen ()) in
+  let (_, t2) = Expr.canon t2 (mkgen ()) in
+  Expr.equal t1 t2
+
+let alpha_eq_list l1 l2 =
+  let l1 =
+    List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l1
+    |> List.sort Expr.compare
+  in
+  let l2 =
+    List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l2
+    |> List.sort Expr.compare
+  in
+  List.equal Expr.equal l1 l2
+
 (* ---------------------------------------- *)
 
 type native =

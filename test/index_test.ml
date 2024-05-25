@@ -131,29 +131,6 @@ module Query_tests = struct
   let collect_unifiable_terms query index =
     collect_unifiable query index |> List.map fst
 
-  let mkgen () =
-    let c = ref 0 in
-    fun () ->
-      let v = !c in
-      c := !c + 1 ;
-      v
-
-  let alpha_eq t1 t2 =
-    let (_, t1) = Expr.canon t1 (mkgen ()) in
-    let (_, t2) = Expr.canon t2 (mkgen ()) in
-    Expr.equal t1 t2
-
-  let alpha_eq_list l1 l2 =
-    let l1 =
-      List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l1
-      |> List.sort Expr.compare
-    in
-    let l2 =
-      List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l2
-      |> List.sort Expr.compare
-    in
-    List.equal Expr.equal l1 l2
-
   let check_alpha_eq_list ~expected ~got =
     if alpha_eq_list expected got then ()
     else
@@ -179,13 +156,43 @@ module Query_tests = struct
         check_alpha_eq_list
           ~got:(collect_unifiable_terms (add (var 0) one) index)
           ~expected:[t0; t2])
+
+  let index_cant_overwrite =
+    Alcotest.test_case "index-cant-overwrite" `Quick (fun () ->
+        let index = Index.create () in
+        let one = float 1.0 in
+        let _ = Index.insert (neg (neg (neg one))) 0 false index in
+        let _ = Index.insert (neg (neg one)) 1 false index in
+        try ignore (Index.insert (neg (neg (neg one))) 1 false index)
+        with Invalid_argument _ -> ())
+
+  let index_can_overwrite =
+    Alcotest.test_case "index-can-overwrite" `Quick (fun () ->
+        let index = Index.create () in
+        let one = float 1.0 in
+        let _t0 = Index.insert (neg (neg (neg one))) 0 false index in
+        let _t1 = Index.insert (neg (neg one)) 1 false index in
+        let t2 = Index.insert (neg (neg (neg one))) 2 true index in
+        match collect_unifiable (neg (neg (neg one))) index with
+        | [(t, v)] ->
+            if v = 2 && alpha_eq t t2 then ()
+            else
+              Alcotest.failf
+                "expected: %a@.got: %a, %d@."
+                Expr.pp
+                t2
+                Expr.pp
+                t
+                v
+        | _ -> Alcotest.fail "expected one unifiable term")
 end
 
 let () =
   Alcotest.run
     "subst"
-    [ (* ("index-basic", [Query_tests.index_basic]); *)
-      ( "subst-tree",
+    [ ( "subst-tree",
         [ subst_tree_insert_terms;
           subst_tree_insert_terms2;
-          subst_tree_insert_random_term ] ) ]
+          subst_tree_insert_random_term ] );
+      ( "index-basic",
+        [Query_tests.index_basic; Query_tests.index_cant_overwrite] ) ]
