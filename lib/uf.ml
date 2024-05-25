@@ -19,7 +19,7 @@ module Make (A : PersistentArray) : sig
 
   val find : t -> elt -> elt
 
-  val union : t -> elt -> elt -> t
+  val union : t -> elt -> elt -> elt * t
 end = struct
   type t = { rank : int A.t; mutable parent : int A.t }
 
@@ -46,10 +46,11 @@ end = struct
     if cx != cy then
       let rx = A.get h.rank cx |> Option.value ~default:0 in
       let ry = A.get h.rank cy |> Option.value ~default:0 in
-      if rx > ry then { h with parent = A.set h.parent cy cx }
-      else if rx < ry then { h with parent = A.set h.parent cx cy }
-      else { rank = A.set h.rank cx (rx + 1); parent = A.set h.parent cy cx }
-    else h
+      if rx > ry then (cx, { h with parent = A.set h.parent cy cx })
+      else if rx < ry then (cy, { h with parent = A.set h.parent cx cy })
+      else
+        (cx, { rank = A.set h.rank cx (rx + 1); parent = A.set h.parent cy cx })
+    else (cx, h)
 end
 
 module Map_based = Make (struct
