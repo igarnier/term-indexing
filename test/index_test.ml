@@ -1,6 +1,7 @@
 [@@@ocaml.warning "-32"]
 
 open Arith
+module Path = Lib_rewriting.Path
 
 module Mscg_tests = struct
   let diag_idempotent =
@@ -69,7 +70,7 @@ module Mscg_tests = struct
     fun () ->
       let v = !c in
       incr c ;
-      Index.indicator v
+      Index.Internal_for_tests.indicator v
 
   let mscg_nofail =
     QCheck2.Test.make
@@ -126,15 +127,15 @@ module Mscg_tests = struct
         let x1 = var 1 in
         let x2 = var 2 in
         let subst1 =
-          [ (Index.indicator 1, neg a);
-            (Index.indicator 2, add c x1);
-            (Index.indicator 3, neg c) ]
+          [ (Index.Internal_for_tests.indicator 1, neg a);
+            (Index.Internal_for_tests.indicator 2, add c x1);
+            (Index.Internal_for_tests.indicator 3, neg c) ]
           |> List.to_seq |> Subst.of_seq
         in
         let subst2 =
-          [ (Index.indicator 1, neg b);
-            (Index.indicator 2, x1);
-            (Index.indicator 3, neg x2) ]
+          [ (Index.Internal_for_tests.indicator 1, neg b);
+            (Index.Internal_for_tests.indicator 2, x1);
+            (Index.Internal_for_tests.indicator 3, neg x2) ]
           |> List.to_seq |> Subst.of_seq
         in
         let (mscg, _residual1, _residual2) =
@@ -155,8 +156,14 @@ module Mscg_tests = struct
                   Expr.pp
                   v'
         in
-        assert_eq_subst mscg (Index.indicator 1) (neg (var (Index.indicator 4))) ;
-        assert_eq_subst mscg (Index.indicator 3) (neg (var (Index.indicator 5))))
+        assert_eq_subst
+          mscg
+          (Index.Internal_for_tests.indicator 1)
+          (neg (var (Index.Internal_for_tests.indicator 4))) ;
+        assert_eq_subst
+          mscg
+          (Index.Internal_for_tests.indicator 3)
+          (neg (var (Index.Internal_for_tests.indicator 5))))
 end
 
 let subst_tree_insert_terms =
@@ -367,15 +374,68 @@ module Query_tests = struct
           (fun i (_path, gen) -> ignore (Index.insert gen i false index))
           generalizations ;
         (* Iterate on all generalizations of (add (var 0) (var 0)).
-           We expect to find only [tree] or a single variable. *)
+           We expect to find only a single variable. *)
         Index.iter_generalize
           (add (var 0) (var 0))
           (fun expr _ ->
-            if not (Expr.equal expr tree || Expr.is_var expr |> Option.is_some)
+            if not (Expr.is_var expr |> Option.is_some) then
+              Alcotest.failf
+                "Expected to single variable, found %a instead"
+                Expr.pp
+                expr
+            else ())
+          index ;
+        let query = add (mkbintree 3) (var 0) in
+        (* Iterate on all generalizations of [query].
+           We expect to find only a single variable or the query itself. *)
+        Index.iter_generalize
+          query
+          (fun expr _ ->
+            if not (alpha_eq expr query || Expr.is_var expr |> Option.is_some)
             then
               Alcotest.failf
                 "Expected to find full tree or single variable, found %a \
                  instead"
+                Expr.pp
+                expr
+            else ())
+          index)
+
+  let index_query_specialize =
+    Alcotest.test_case "index-query-specialize" `Quick (fun () ->
+        let index = Index.create () in
+        let tree = mkbintree 4 in
+        let _ = Index.insert tree 0 false index in
+        let generalizations = make_generalizations tree in
+        List.iteri
+          (fun i (_path, gen) -> ignore (Index.insert gen i false index))
+          generalizations ;
+        (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
+           solution found is the full tree. *)
+        Index.iter_specialize
+          (add (var 0) (var 0))
+          (fun expr _ ->
+            if not (Expr.equal expr tree) then
+              Alcotest.failf
+                "Expected to find full tree, found %a instead"
+                Expr.pp
+                expr
+            else ())
+          index ;
+        (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
+           solution found in the full tree. *)
+        let query =
+          Expr.subst
+            ~term:tree
+            ~path:Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
+            ~replacement:(var 0)
+        in
+        Index.iter_specialize
+          query
+          (fun expr _ ->
+            if not (Expr.equal expr tree || alpha_eq expr query) then
+              Alcotest.failf
+                "Expected to find full tree or query, found %a instead"
                 Expr.pp
                 expr
             else ())
@@ -394,5 +454,8 @@ let () =
           subst_tree_insert_terms2;
           subst_tree_insert_random_term ] );
       ( "index-basic",
-        Query_tests.[index_basic; index_cant_overwrite; index_query_generalize]
-      ) ]
+        Query_tests.
+          [ index_basic;
+            index_cant_overwrite;
+            index_query_generalize;
+            index_query_specialize ] ) ]

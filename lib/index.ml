@@ -1,25 +1,36 @@
 (** The module type of substitution trees *)
-module type Tree_S = sig
+module type S = sig
   (** The type of substitutions *)
   type subst
 
   (** The type of terms, which act as keys of substitution trees *)
   type term
 
-  (** The type of variables *)
-  type var
-
   (** The type of substitution trees with values of type ['a] *)
   type 'a t
+
+  val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 
   val create : unit -> 'a t
 
   (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
       and returns the canonicalized term. *)
-  val insert : term -> 'a -> 'a t -> term
+  val insert : term -> 'a -> bool -> 'a t -> term
 
   (** [iter f index] iterates [f] on the bindings of [index]. *)
   val iter : (term -> 'a -> unit) -> 'a t -> unit
+
+  (** [iter_unifiable query f index] iterates [f] on all bindings contained in [index]
+      whose keys are unifiable with [query]. *)
+  val iter_unifiable : term -> (term -> 'a -> unit) -> 'a t -> unit
+
+  (** [iter_generalize query f index] iterates [f] on all bindings contained in [index]
+      whose keys generalize [query]. *)
+  val iter_generalize : term -> (term -> 'a -> unit) -> 'a t -> unit
+
+  (** [iter_specialize query f index] iterates [f] on all bindings contained in [index]
+      whose keys specialize [query]. *)
+  val iter_specialize : term -> (term -> 'a -> unit) -> 'a t -> unit
 
   module Internal_for_tests : sig
     val indicator : int -> int
@@ -46,15 +57,13 @@ module type Tree_S = sig
       [result] is the most spceific common generalization of [term1] and [term2],
       [residual1] is a substitution such that [result] is equal to [term1] after applying [residual1],
       and [residual2] is a substitution such that [result] is equal to [term2] after applying [residual2]. *)
-    val mscg : term -> term -> (unit -> var) -> term * subst * subst
+    val mscg : term -> term -> term * subst * subst
 
     (** [mscg_subst s1 s2 freshgen] computes a triple [(result, residual1, residual2)] where
       [result] is the most specific common generalization of [s1] and [s2],
       [residual1] is a substitution such that [result] is equal to [s1] after composing with [residual1],
       and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
-    val mscg_subst : subst -> subst -> (unit -> var) -> subst * subst * subst
-
-    val ub : 'a t -> Int_option.t
+    val mscg_subst : subst -> subst -> (unit -> int) -> subst * subst * subst
   end
 end
 
@@ -64,13 +73,13 @@ module Make
     (P : Intf.Signature)
     (M : Intf.Map with type key = int)
     (T : Term.S with type prim = P.t and type 'a var_map = 'a M.t)
-    (S : Subst.S with type term = T.t and type 'a var_map = 'a T.var_map) =
-struct
+    (S : Subst.S with type term = T.t and type 'a var_map = 'a T.var_map) :
+  S with type term = T.t and type subst = S.t = struct
   type term = T.t
 
   type subst = S.t
 
-  type 'a tree = { fresh : int ref; nodes : 'a node Vec.vector }
+  type 'a t = { fresh : int ref; nodes : 'a node Vec.vector }
 
   and 'a node =
     { (* Invariant: keys of a substitution are indicator variables. *)
@@ -123,8 +132,6 @@ struct
       counter := v + 4 ;
       v
 
-  let next x = x + 4
-
   let rec to_box pp_data node =
     let open PrintBox in
     hlist
@@ -143,7 +150,7 @@ struct
 
   and box_of_subtrees pp_data vec = Vec.to_list vec |> List.map (to_box pp_data)
 
-  let pp_node pp_data fmtr node = PrintBox_text.pp fmtr (to_box pp_data node)
+  (* let pp_node pp_data fmtr node = PrintBox_text.pp fmtr (to_box pp_data node) *)
 
   let pp pp_data fmtr tree =
     PrintBox_text.pp fmtr (PrintBox.vlist (box_of_subtrees pp_data tree.nodes))
@@ -259,7 +266,7 @@ struct
       | Some _ -> invalid_arg "try_set"
 
   let insert_subst (subst : subst) (data : 'a) (may_overwrite : bool)
-      (tree : 'a tree) =
+      (tree : 'a t) =
     let counter = tree.fresh in
     assert (not (S.is_empty subst)) ;
     (* We insert [subst] in the tree, possibly refining existing nodes. *)
@@ -414,9 +421,24 @@ struct
     let (_, query) = T.canon query (gen_query_variable ()) in
     iter_generalize_node f root.nodes query (S.empty ())
 
-  (*
-     TODO: iter_specialization
-   *)
+  let rec iter_specialize_node f (nodes : 'a node Vec.vector) query uf_state =
+    Vec.iter
+      (fun { head; subtrees; data } ->
+        match S.Unification.unify_subst head uf_state with
+        | exception S.Unification.Cannot_unify -> ()
+        | uf_state ->
+            let subst = S.Unification.subst uf_state in
+            let term = S.eval_exn (indicator 0) subst |> S.lift subst in
+            if S.Unification.generalize query term then (
+              Format.printf "%a specializes %a@." T.pp term T.pp query ;
+              match data with None -> () | Some data -> f term data)
+            else () ;
+            iter_specialize_node f subtrees query uf_state)
+      nodes
+
+  let iter_specialize (query : term) f root =
+    let (_, query) = T.canon query (gen_query_variable ()) in
+    iter_specialize_node f root.nodes query (S.Unification.empty ())
 
   module Internal_for_tests = struct
     let indicator = indicator
