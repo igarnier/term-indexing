@@ -342,6 +342,44 @@ module Query_tests = struct
                 t
                 v
         | _ -> Alcotest.fail "expected one unifiable term")
+
+  let rec mkbintree depth =
+    if depth = 0 then float 1.0
+    else
+      let subtree = mkbintree (depth - 1) in
+      add subtree subtree
+
+  let make_generalizations term =
+    Expr.fold
+      (fun _subterm path acc ->
+        (path, Expr.subst ~term ~path ~replacement:(var 0)) :: acc)
+      []
+      term
+
+  let index_query_generalize =
+    Alcotest.test_case "index-query-generalize" `Quick (fun () ->
+        let index = Index.create () in
+        let tree = mkbintree 4 in
+        let _ = Index.insert tree 0 false index in
+        let generalizations = make_generalizations tree in
+        (* let generalizations_count = List.length generalizations in *)
+        List.iteri
+          (fun i (_path, gen) -> ignore (Index.insert gen i false index))
+          generalizations ;
+        (* Iterate on all generalizations of (add (var 0) (var 0)).
+           We expect to find only [tree] or a single variable. *)
+        Index.iter_generalize
+          (add (var 0) (var 0))
+          (fun expr _ ->
+            if not (Expr.equal expr tree || Expr.is_var expr |> Option.is_some)
+            then
+              Alcotest.failf
+                "Expected to find full tree or single variable, found %a \
+                 instead"
+                Expr.pp
+                expr
+            else ())
+          index)
 end
 
 let () =
@@ -356,4 +394,5 @@ let () =
           subst_tree_insert_terms2;
           subst_tree_insert_random_term ] );
       ( "index-basic",
-        [Query_tests.index_basic; Query_tests.index_cant_overwrite] ) ]
+        Query_tests.[index_basic; index_cant_overwrite; index_query_generalize]
+      ) ]

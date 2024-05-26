@@ -89,8 +89,7 @@ struct
   (** Substitution trees operate on terms where variables are split into two
       disjoint subsets: variables stemming from the terms inserted by the user
       and so-called 'indicator' variables, which constitute the domain of the
-      substitutions and denote sharing among sub-trees.
-  *)
+      substitutions and denote sharing among sub-trees. *)
   let indicator x = x lsl 2
 
   let is_indicator_variable x = x land 3 = 0
@@ -372,6 +371,10 @@ struct
      total size: 3 * max(ub(q), 2 * ub(h))
   *)
 
+  (*
+     TODO: can store data associated to nodes in a dedicated table, using the terms UIDs as keys
+   *)
+
   let rec iter_unifiable_node f (nodes : 'a node Vec.vector) uf_state =
     Vec.iter
       (fun { head; subtrees; data } ->
@@ -395,8 +398,24 @@ struct
     in
     iter_unifiable_node f root.nodes state
 
+  let rec iter_generalize_node f (nodes : 'a node Vec.vector) query subst =
+    Vec.iter
+      (fun { head; subtrees; data } ->
+        let subst = S.union head subst in
+        let term = S.eval_exn (indicator 0) subst |> S.lift subst in
+        if S.Unification.generalize term query then (
+          Format.printf "%a generalizes %a@." T.pp term T.pp query ;
+          (match data with None -> () | Some data -> f term data) ;
+          iter_generalize_node f subtrees query subst)
+        else Format.printf "%a does not generalize %a@." T.pp term T.pp query)
+      nodes
+
+  let iter_generalize (query : term) f root =
+    let (_, query) = T.canon query (gen_query_variable ()) in
+    iter_generalize_node f root.nodes query (S.empty ())
+
   (*
-     TODO: iter_specialization, iter_generalization
+     TODO: iter_specialization
    *)
 
   module Internal_for_tests = struct
