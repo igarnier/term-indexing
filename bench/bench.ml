@@ -1,6 +1,6 @@
 [@@@ocaml.warning "-32"]
 
-open Lib_rewriting
+open Term_indexing
 
 module Prim = struct
   type t = Add | Sub | Mul | Div | Neg | Float of float

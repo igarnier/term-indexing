@@ -1,7 +1,7 @@
 [@@@ocaml.warning "-32"]
 
 open Arith
-module Path = Lib_rewriting.Path
+module Path = Term_indexing.Path
 
 module Mscg_tests = struct
   let diag_idempotent =

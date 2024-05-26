@@ -1,4 +1,4 @@
-open Lib_rewriting
+open Term_indexing
 open Arith
 
 (* -------------------- *)

@@ -1,7 +1,7 @@
 [@@@ocaml.warning "-32"]
 
 open Arith
-module Int_map = Lib_rewriting.Int_map
+module Int_map = Term_indexing.Int_map
 
 module Subst_tests = struct
   let print_test =

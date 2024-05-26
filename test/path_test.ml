@@ -1,4 +1,4 @@
-open Lib_rewriting
+open Term_indexing
 open QCheck2
 
 let rec path_of_list : int list -> Path.t =

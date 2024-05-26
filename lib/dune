@@ -1,5 +1,5 @@
 (library
-  (name lib_rewriting)
-  (public_name lib_rewriting)
+  (name term_indexing)
+  (public_name term-indexing)
   (libraries hashcons containers printbox printbox-text fmt)
   (ocamlopt_flags (-warn-error -39)))

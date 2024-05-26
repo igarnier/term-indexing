@@ -1,4 +1,4 @@
 (executable
  (name bench)
- (libraries lib_rewriting unix)
+ (libraries term_indexing unix)
 )
