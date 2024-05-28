@@ -289,7 +289,7 @@ let subst_tree_insert_random_term =
 module Query_tests = struct
   let collect_unifiable query index =
     let acc = ref [] in
-    Index.iter_unifiable query (fun term v -> acc := (term, v) :: !acc) index ;
+    Index.iter_unifiable (fun term v -> acc := (term, v) :: !acc) index query ;
     !acc
 
   let collect_unifiable_terms query index =
@@ -376,7 +376,6 @@ module Query_tests = struct
         (* Iterate on all generalizations of (add (var 0) (var 0)).
            We expect to find only a single variable. *)
         Index.iter_generalize
-          (add (var 0) (var 0))
           (fun expr _ ->
             if not (Expr.is_var expr |> Option.is_some) then
               Alcotest.failf
@@ -384,12 +383,12 @@ module Query_tests = struct
                 Expr.pp
                 expr
             else ())
-          index ;
+          index
+          (add (var 0) (var 0)) ;
         let query = add (mkbintree 3) (var 0) in
         (* Iterate on all generalizations of [query].
            We expect to find only a single variable or the query itself. *)
         Index.iter_generalize
-          query
           (fun expr _ ->
             if not (alpha_eq expr query || Expr.is_var expr |> Option.is_some)
             then
@@ -399,7 +398,8 @@ module Query_tests = struct
                 Expr.pp
                 expr
             else ())
-          index)
+          index
+          query)
 
   let index_query_specialize =
     Alcotest.test_case "index-query-specialize" `Quick (fun () ->
@@ -413,7 +413,6 @@ module Query_tests = struct
         (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
            solution found is the full tree. *)
         Index.iter_specialize
-          (add (var 0) (var 0))
           (fun expr _ ->
             if not (Expr.equal expr tree) then
               Alcotest.failf
@@ -421,7 +420,8 @@ module Query_tests = struct
                 Expr.pp
                 expr
             else ())
-          index ;
+          index
+          (add (var 0) (var 0)) ;
         (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
            solution found in the full tree. *)
         let query =
@@ -431,7 +431,6 @@ module Query_tests = struct
             ~replacement:(var 0)
         in
         Index.iter_specialize
-          query
           (fun expr _ ->
             if not (Expr.equal expr tree || alpha_eq expr query) then
               Alcotest.failf
@@ -439,7 +438,8 @@ module Query_tests = struct
                 Expr.pp
                 expr
             else ())
-          index)
+          index
+          query)
 end
 
 let () =

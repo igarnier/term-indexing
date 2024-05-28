@@ -61,57 +61,20 @@ and get_focus_list : type f. ('p, f) pattern_list -> f focus_tag =
       | UF -> Focused_tag
       | FF -> Focused_tag)
 
-module type S = sig
-  type prim
-
-  type path
-
-  type t
-
-  type plist
-
-  type node
-
-  val pattern_matches : t -> node -> bool
-
-  val all_matches : t -> node -> path list
-
-  val focus_matches : t -> path list -> path list
-
-  val prim : prim -> plist -> t
-
-  val prim_pred : (prim -> bool) -> plist -> t
-
-  val var : int -> t
-
-  val any : t
-
-  val focus : t -> t
-
-  val list_any : plist
-
-  val list_empty : plist
-
-  val list_cons : t -> plist -> plist
-
-  val ( @. ) : t -> plist -> plist
-
-  val pp : Format.formatter -> t -> unit
-
-  val uid : t -> int
-end
-
-module Make (Prim : Intf.Signature) (Term : Term.S with type prim = Prim.t) =
+module Make_raw
+    (P : Intf.Signature)
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) =
 struct
-  type prim = Prim.t
+  type prim = P.t
 
   type path = Path.t
 
-  type t = Ex_patt : (prim, 'f) pattern -> t
+  type t = Ex_patt : (prim, 'f) pattern -> t [@@ocaml.unboxed]
 
   type plist = Ex_patt_list : (prim, 'f) pattern_list -> plist
+  [@@ocaml.unboxed]
 
-  type node = Term.t
+  type term = T.t
 
   let rec get_paths_of_focuses :
       (prim, focused) pattern -> Path.t -> Path.t list -> Path.t list =
@@ -140,7 +103,7 @@ struct
             let acc = get_paths_of_focuses prim prim_position acc in
             get_paths_of_focuses_list tail position (index + 1) acc)
 
-  let rec pattern_matches_aux : type f. (prim, f) pattern -> node -> bool =
+  let rec pattern_matches_aux : type f. (prim, f) pattern -> term -> bool =
    fun patt node ->
     match (patt.patt_desc, node.Hashcons.node) with
     | (Patt_focus patt, _) -> pattern_matches_aux patt node
@@ -151,12 +114,11 @@ struct
     | (Patt_prim (hpred, subpatts), Prim (prim, subterms, _)) -> (
         match hpred with
         | Patt_prim_equal h ->
-            if Prim.equal h prim then list_matches subpatts subterms 0
-            else false
+            if P.equal h prim then list_matches subpatts subterms 0 else false
         | Patt_pred pred ->
             if pred prim then list_matches subpatts subterms 0 else false)
 
-  and list_matches : type f. (prim, f) pattern_list -> node array -> int -> bool
+  and list_matches : type f. (prim, f) pattern_list -> term array -> int -> bool
       =
    fun patts nodes index ->
     let remaining = Array.length nodes - index in
@@ -169,10 +131,10 @@ struct
           let n = Array.get nodes index in
           pattern_matches_aux p n && list_matches lpatt nodes (index + 1)
 
-  let pattern_matches (patt : t) (node : node) =
+  let pattern_matches (patt : t) (node : term) =
     match patt with Ex_patt patt -> pattern_matches_aux patt node
 
-  let rec all_matches_aux : t -> node -> Path.t -> Path.t list -> Path.t list =
+  let rec all_matches_aux : t -> term -> Path.t -> Path.t list -> Path.t list =
    fun patt node position acc ->
     let subterms =
       match node.Hashcons.node with
@@ -263,7 +225,7 @@ struct
    fun fmtr patt ->
     match patt.patt_desc with
     | Patt_prim (Patt_prim_equal prim, subpatts) ->
-        Format.fprintf fmtr "[%a](%a)" Prim.pp prim pp_patt_list subpatts
+        Format.fprintf fmtr "[%a](%a)" P.pp prim pp_patt_list subpatts
     | Patt_prim (Patt_pred _, subpatts) ->
         Format.fprintf fmtr "[opaque_pred](%a)" pp_patt_list subpatts
     | Patt_var id -> Format.fprintf fmtr "[var %d]" id
@@ -285,21 +247,34 @@ struct
   let uid (Ex_patt patt) = patt.patt_uid
 end
 
-module Make_with_hash_consing
-    (Prim : Intf.Signature)
-    (Term : Term.S with type prim = Prim.t) : sig
-  include
-    S with type prim = Prim.t and type path = Path.t and type node = Term.t
+module Make : functor
+  (P : Intf.Signature)
+  (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+  ->
+  Intf.Pattern
+    with type prim = P.t
+     and type path = Path.t
+     and type term = P.t Term.term =
+  Make_raw
 
-  val all_matches_with_hash_consing : t -> node -> path list
+module Make_with_hash_consing
+    (P : Intf.Signature)
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) : sig
+  include
+    Intf.Pattern
+      with type prim = P.t
+       and type path = Path.t
+       and type term = P.t Term.term
+
+  val all_matches_with_hash_consing : t -> term -> path list
 end = struct
-  include Make (Prim) (Term)
+  include Make_raw (P) (T)
 
   type key = { patt_uid : int; node_tag : int }
 
   let table : (key, path list) Hashtbl.t = Hashtbl.create 7919
 
-  let rec all_matches_aux : t -> node -> Path.t -> Path.t list -> Path.t list =
+  let rec all_matches_aux : t -> term -> Path.t -> Path.t list -> Path.t list =
    fun patt node position acc ->
     let patt_uid = uid patt in
     let node_tag = node.tag in

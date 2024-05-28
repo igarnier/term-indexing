@@ -1,102 +1,13 @@
 module Vec = Containers.Vector
 
-(** The module type of substitutions *)
-module type S = sig
-  (** The type of terms *)
-  type term
-
-  type 'a var_map
-
-  type var := int
-
-  (** The type of substitutions *)
-  type t
-
-  val of_seq : (var * term) Seq.t -> t
-
-  val to_seq : t -> (var * term) Seq.t
-
-  val to_seq_keys : t -> var Seq.t
-
-  val pp : Format.formatter -> t -> unit
-
-  (** [empty ()] is the empty substitution.  *)
-  val empty : unit -> t
-
-  (** [is_empty subst] checks whether [equal subst empty] *)
-  val is_empty : t -> bool
-
-  val equal : t -> t -> bool
-
-  (** [ub subst] is an upper bound on the absolute value of variables appearing in [subst]
-      (either in the domain or the range of the substitution). *)
-  val ub : t -> Int_option.t
-
-  (** [underlying_map subst] returns the underlying map of the substitution. *)
-  val underlying_map : t -> term var_map
-
-  (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
-      or [None] if [v] is not in the domain of [subst]. *)
-  val eval : var -> t -> term option
-
-  (** Exception-raising variant of {!eval}.
-      @raise Not_found if [v] is not in the domain of [subst]. *)
-  val eval_exn : var -> t -> term
-
-  (** [add v t subst] adds a mapping from [v] to [t] in [subst].
-      If [v] is already in the domain of [subst], the previous mapping is replaced.
-
-      @raise Invalid_argument if [t] is a variable equal to [v] *)
-  val add : var -> term -> t -> t
-
-  (** [unsafe_add] does as {!add} but doen't check for validity of the mapping. *)
-  val unsafe_add : var -> term -> t -> t
-
-  (** [lift subst term] applies the substitution [subst] to [term].
-      Note that [lift] does not perform an occur check: do not use with
-      substitutions that are not well-founded. *)
-  val lift : t -> term -> term
-
-  (** [union s1 s2] computes the union of [s1] and [s2].
-
-      @raise Invalid_argument if [s1] and [s2] have overlapping domains. *)
-  val union : t -> t -> t
-
-  (** [Unification] contains facilities to perform first-order term unification *)
-  module Unification : sig
-    (** [state] is the type of unification state. *)
-    type state
-
-    (** [Cannot_unify] is raised by {!unify} when a unifier cannot be found. *)
-    exception Cannot_unify
-
-    (** [empty ()] is an empty unification state. *)
-    val empty : unit -> state
-
-    (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
-        an updated {!state}.
-
-        @raise Cannot_unify if no solution was found. *)
-    val unify : term -> term -> state -> state
-
-    (** [unify_subst s state] unifies [s] with substitution state [state]
-        and returns an updated {!state}. *)
-    val unify_subst : t -> state -> state
-
-    (** [generalize t1 t2] checks that there exists a substitution [subst]
-        such that [lift t1 subst = t2]. *)
-    val generalize : term -> term -> bool
-
-    (** [subst state] returns the substitution underlying the unification state. *)
-    val subst : state -> t
-  end
-end
-
 module Make
     (P : Intf.Signature)
     (M : Intf.Map with type key = int)
-    (T : Term.S with type prim = P.t and type 'a var_map = 'a M.t) :
-  S with type term = T.t and type 'a var_map = 'a T.var_map = struct
+    (T : Intf.Term
+           with type prim = P.t
+            and type t = P.t Term.term
+            and type 'a var_map = 'a M.t) :
+  Intf.Subst with type term = T.t and type 'a var_map = 'a T.var_map = struct
   type term = T.t
 
   type 'a var_map = 'a T.var_map

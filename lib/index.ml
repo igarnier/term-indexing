@@ -1,36 +1,5 @@
-(** The module type of substitution trees *)
 module type S = sig
-  (** The type of substitutions *)
-  type subst
-
-  (** The type of terms, which act as keys of substitution trees *)
-  type term
-
-  (** The type of substitution trees with values of type ['a] *)
-  type 'a t
-
-  val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
-
-  val create : unit -> 'a t
-
-  (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
-      and returns the canonicalized term. *)
-  val insert : term -> 'a -> bool -> 'a t -> term
-
-  (** [iter f index] iterates [f] on the bindings of [index]. *)
-  val iter : (term -> 'a -> unit) -> 'a t -> unit
-
-  (** [iter_unifiable query f index] iterates [f] on all bindings contained in [index]
-      whose keys are unifiable with [query]. *)
-  val iter_unifiable : term -> (term -> 'a -> unit) -> 'a t -> unit
-
-  (** [iter_generalize query f index] iterates [f] on all bindings contained in [index]
-      whose keys generalize [query]. *)
-  val iter_generalize : term -> (term -> 'a -> unit) -> 'a t -> unit
-
-  (** [iter_specialize query f index] iterates [f] on all bindings contained in [index]
-      whose keys specialize [query]. *)
-  val iter_specialize : term -> (term -> 'a -> unit) -> 'a t -> unit
+  include Intf.Term_index
 
   module Internal_for_tests : sig
     val indicator : int -> int
@@ -72,8 +41,11 @@ module Vec = Containers.Vector
 module Make
     (P : Intf.Signature)
     (M : Intf.Map with type key = int)
-    (T : Term.S with type prim = P.t and type 'a var_map = 'a M.t)
-    (S : Subst.S with type term = T.t and type 'a var_map = 'a T.var_map) :
+    (T : Intf.Term
+           with type prim = P.t
+            and type t = P.t Term.term
+            and type 'a var_map = 'a M.t)
+    (S : Intf.Subst with type term = T.t and type 'a var_map = 'a T.var_map) :
   S with type term = T.t and type subst = S.t = struct
   type term = T.t
 
@@ -397,7 +369,7 @@ module Make
             iter_unifiable_node f subtrees uf_state)
       nodes
 
-  let iter_unifiable (query : term) f root =
+  let iter_unifiable f root (query : term) =
     let (_, query) = T.canon query (gen_query_variable ()) in
     let query_subst = S.of_seq (Seq.return (indicator 0, query)) in
     let state =
@@ -417,7 +389,7 @@ module Make
         else Format.printf "%a does not generalize %a@." T.pp term T.pp query)
       nodes
 
-  let iter_generalize (query : term) f root =
+  let iter_generalize f root (query : term) =
     let (_, query) = T.canon query (gen_query_variable ()) in
     iter_generalize_node f root.nodes query (S.empty ())
 
@@ -436,7 +408,7 @@ module Make
             iter_specialize_node f subtrees query uf_state)
       nodes
 
-  let iter_specialize (query : term) f root =
+  let iter_specialize f root (query : term) =
     let (_, query) = T.canon query (gen_query_variable ()) in
     iter_specialize_node f root.nodes query (S.Unification.empty ())
 

@@ -54,50 +54,13 @@ let get_subterm : 'prim term -> Path.t -> 'prim term =
   let path = Path.reverse path in
   get_subterm_fwd term path
 
-module type S = sig
-  type prim
-
-  type t = prim term
-
-  type var := int
-
-  type 'a var_map
-
-  val equal : t -> t -> bool
-
-  val compare : t -> t -> int
-
-  val hash : t -> int
-
-  val prim : prim -> t array -> t
-
-  val var : var -> t
-
-  val ub : t -> Int_option.t
-
-  val is_var : t -> var option
-
-  val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
-
-  val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
-
-  val map_variables : (int -> t) -> t -> t
-
-  val get_subterm_fwd : t -> Path.forward -> t
-
-  val get_subterm : t -> Path.t -> t
-
-  val subst : term:t -> path:Path.t -> replacement:t -> t
-
-  val canon : t -> (unit -> var) -> var var_map * t
-
-  val pp : Format.formatter -> t -> unit
-end
-
 module Make_hash_consed
     (P : Intf.Signature)
     (M : Intf.Map with type key = int) :
-  S with type prim = P.t and type 'a var_map = 'a M.t = struct
+  Intf.Term
+    with type prim = P.t
+     and type t = P.t term
+     and type 'a var_map = 'a M.t = struct
   type prim = P.t
 
   type t = prim term
@@ -153,7 +116,7 @@ module Make_hash_consed
   let prim head subterms =
     if Array.length subterms <> P.arity head then
       Format.kasprintf
-        failwith
+        invalid_arg
         "Invalid number of arguments for prim %a: expected %d, got %d"
         P.pp
         head
