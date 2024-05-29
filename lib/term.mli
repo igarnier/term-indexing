@@ -23,3 +23,6 @@ module Make_hash_consed : functor
     with type prim = P.t
      and type t = P.t term
      and type 'a var_map = 'a M.t
+
+(** [Default_map] is a reasonable implementation of [Intf.Map] usable with {!Make_hash_consed} *)
+module Default_map : Intf.Map with type key = int

@@ -1,0 +1,74 @@
+{0 Term indexing}
+
+This library implements some tools to manipulate and index {{: https://en.wikipedia.org/wiki/Term_(logic)}first-order terms}.
+Let us illustrate the features of this library. The entrypoint is the module {!module-Term_indexing}.
+
+{1 Hash-consed first-order terms}
+
+First-order terms are parameterized by a {!Term_indexing.Intf.Signature} which describes the primitives
+and their arity. A term is either a variable, or constructed by applying a primitive to the right number
+of sub-terms. For instance, the arithmetic expression {m x_0 + x_1 * x_1} can be represented as a term
+a term constructed with primitives for addition and multiplication.
+We'll look at a small language for manipulating such expressions.
+
+{[
+open Term_rewriting
+
+(** The type of primitives *)
+type prim = Add | Mul | Neg | Float of float
+
+(** [Prim] implements [Intf.Signature]  *)
+module Prim : Intf.Signature with type t = prim = struct
+
+  type t = prim
+
+  let compare (x : t) (y : t) = Stdlib.compare x y
+
+  let equal (x : t) (y : t) = Stdlib.( = ) x y
+
+  let hash = Hashtbl.hash
+
+  let pp fmtr = ...
+
+  (** Each primitive is associated to an arity, which corresponds to the number
+      of function maps each constructor to its number of expected arguments;
+      e.g. addition is a binary operation, negation is a unary operation and
+      constants are 0-ary.  *)
+  let arity = function Add | Mul -> 2 | Neg -> 1 | Float _ -> 0
+end
+]}
+
+The functor {!Term_indexing.Term.Make_hash_consed} takes a module implenting
+{!Term_indexing.Intf.Signature} and returns a module implementing operations to create
+and manipulate terms over the given signature (see {!Term_indexing.Intf.Term}).
+
+{[
+module Expr = Term.Make_hash_consed (Prim) (Term.Default_map)
+]}
+
+Terms are constructed using the functions {!Expr.prim} and {!Expr.var}
+
+Let us define some convenient wrappers to create terms. Note that the correctness
+of arities is dynamically checked by [Expr.prim].
+
+{[
+let add x y = Expr.prim Add [| x; y |]
+
+let mul x y = Expr.prim Mul [| x; y |]
+
+let neg x = Expr.prim Neg [| x |]
+
+let float f = Expr.prim (Prim.Float f) [||]
+
+let var s = Expr.var s
+]}
+
+The mathematical expression {m x_0 + x_1 * x_1} can be represented by the term
+{[
+let t = add (var 0) (mul (var 1) (var 1))
+]}
+
+{1 Folding over and rewriting terms}
+
+{!Term_indexing.Term.Make_hash_consed} implements functions to fold over terms and perform
+basic rewriting operations.

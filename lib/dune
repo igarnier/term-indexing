@@ -3,3 +3,7 @@
   (public_name term-indexing)
   (libraries hashcons containers printbox printbox-text fmt)
   (ocamlopt_flags (-warn-error -39)))
+
+(documentation
+ (package term-indexing)
+  (mld_files :standard))

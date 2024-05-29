@@ -184,8 +184,7 @@ module type Term = sig
 
   (** [get_subterm t pth] is the subterm of [t] at position defined by the path [pth].
 
-      @raise Get_subterm_oob if the path is out of bounds.
-  *)
+      @raise Get_subterm_oob if the path is out of bounds. *)
   val get_subterm : t -> Path.t -> t
 
   (** [subst ~term ~path ~replacement] replaces the subterm of [term] at position [path]
