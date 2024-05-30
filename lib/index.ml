@@ -230,21 +230,15 @@ module Make
     in
     loop (S.to_seq s1) (S.to_seq s2) (S.empty ()) (S.empty ()) (S.empty ())
 
-  let try_set tree data may_overwrite =
-    if may_overwrite then tree.data <- Some data
-    else
-      match tree.data with
-      | None -> tree.data <- Some data
-      | Some _ -> invalid_arg "try_set"
-
-  let insert_subst (subst : subst) (data : 'a) (may_overwrite : bool)
-      (tree : 'a t) =
+  let update_subst (subst : subst) f (tree : 'a t) =
     let counter = tree.fresh in
     assert (not (S.is_empty subst)) ;
     (* We insert [subst] in the tree, possibly refining existing nodes. *)
     let rec insert_aux (subst : subst) (t : 'a node Vec.vector) i =
       if i >= Vec.length t then
-        Vec.push t { head = subst; subtrees = Vec.create (); data = Some data }
+        Vec.push
+          t
+          { head = subst; subtrees = Vec.create (); data = Some (f None) }
       else
         let ({ head; subtrees; data = _ } as ti) = Vec.get t i in
         (* [residual1] contains either variables in the domain of [subst] or fresh variables,
@@ -272,7 +266,7 @@ module Make
             (* Here, [residual1] may only define variables disjoint from [result]. *)
             S.is_empty residual1
           then (* [subst] = [result] = [head] *)
-            try_set ti data may_overwrite
+            ti.data <- Some (f ti.data)
           else insert_aux residual1 subtrees 0
         else (
           (* [subst] has a nontrivial mscg
@@ -286,7 +280,7 @@ module Make
               [| ti;
                  { head = residual1;
                    subtrees = Vec.create ();
-                   data = Some data
+                   data = Some (f None)
                  }
               |]
           in
@@ -297,14 +291,12 @@ module Make
     in
     insert_aux subst tree.nodes 0
 
-  let insert term data may_overwrite tree =
+  let update term f tree =
     let (_, term) = T.canon term (gen_index ()) in
-    insert_subst
-      (S.of_seq (Seq.return (indicator 0, term)))
-      data
-      may_overwrite
-      tree ;
+    update_subst (S.of_seq (Seq.return (indicator 0, term))) f tree ;
     term
+
+  let insert term data tree = update term (fun _ -> data) tree
 
   (*
      To reconstruct the substitution at a given node, we can rely on the fact that on

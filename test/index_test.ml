@@ -170,20 +170,20 @@ let subst_tree_insert_terms =
   Alcotest.test_case "subst-tree-insert" `Quick (fun () ->
       let index = Index.create () in
       assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (add (float 1.0) (float 1.0)) 0 false index in
+      let _ = Index.insert (add (float 1.0) (float 1.0)) 0 index in
       assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (float 1.0) 0 false index in
+      let _ = Index.insert (float 1.0) 0 index in
       assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (add (float 1.0) (float 1.0)) 1 true index in
+      let _ = Index.insert (add (float 1.0) (float 1.0)) 1 index in
       assert (Index.Internal_for_tests.check_invariants index))
 
 let subst_tree_insert_terms2 =
   Alcotest.test_case "subst-tree-insert-terms-2" `Quick (fun () ->
       let index = Index.create () in
-      let _ = Index.insert (neg (var 543159235)) 0 true index in
-      let _ = Index.insert (neg (float ~-.500.0)) 1 true index in
-      let _ = Index.insert (neg (div (float 42.0) (float 73.))) 2 true index in
-      let _ = Index.insert (neg (var 543159235)) 3 true index in
+      let _ = Index.insert (neg (var 543159235)) 0 index in
+      let _ = Index.insert (neg (float ~-.500.0)) 1 index in
+      let _ = Index.insert (neg (div (float 42.0) (float 73.))) 2 index in
+      let _ = Index.insert (neg (var 543159235)) 3 index in
       Index.iter
         (fun term data ->
           if Expr.equal term (neg (var 543159235)) then assert (data = 3)
@@ -219,7 +219,7 @@ let subst_tree_insert_random_term =
       try
         Array.iteri
           (fun i t ->
-            let t = Index.insert t i true index in
+            let t = Index.insert t i index in
             Hashtbl.replace table t i ;
             assert (Index.Internal_for_tests.check_invariants index))
           terms ;
@@ -310,9 +310,9 @@ module Query_tests = struct
         let index = Index.create () in
         let one = float 1.0 in
         let two = float 2.0 in
-        let t0 = Index.insert (add one one) 0 false index in
-        let t1 = Index.insert (add one two) 1 false index in
-        let t2 = Index.insert (add (mul two two) one) 2 false index in
+        let t0 = Index.insert (add one one) 0 index in
+        let t1 = Index.insert (add one two) 1 index in
+        let t2 = Index.insert (add (mul two two) one) 2 index in
         assert (Index.Internal_for_tests.check_invariants index) ;
         check_alpha_eq_list
           ~got:(collect_unifiable_terms (add (var 0) (var 1)) index)
@@ -325,18 +325,18 @@ module Query_tests = struct
     Alcotest.test_case "index-cant-overwrite" `Quick (fun () ->
         let index = Index.create () in
         let one = float 1.0 in
-        let _ = Index.insert (neg (neg (neg one))) 0 false index in
-        let _ = Index.insert (neg (neg one)) 1 false index in
-        try ignore (Index.insert (neg (neg (neg one))) 1 false index)
+        let _ = Index.insert (neg (neg (neg one))) 0 index in
+        let _ = Index.insert (neg (neg one)) 1 index in
+        try ignore (Index.insert (neg (neg (neg one))) 1 index)
         with Invalid_argument _ -> ())
 
   let index_can_overwrite =
     Alcotest.test_case "index-can-overwrite" `Quick (fun () ->
         let index = Index.create () in
         let one = float 1.0 in
-        let _t0 = Index.insert (neg (neg (neg one))) 0 false index in
-        let _t1 = Index.insert (neg (neg one)) 1 false index in
-        let t2 = Index.insert (neg (neg (neg one))) 2 true index in
+        let _t0 = Index.insert (neg (neg (neg one))) 0 index in
+        let _t1 = Index.insert (neg (neg one)) 1 index in
+        let t2 = Index.insert (neg (neg (neg one))) 2 index in
         match collect_unifiable (neg (neg (neg one))) index with
         | [(t, v)] ->
             if v = 2 && alpha_eq t t2 then ()
@@ -367,11 +367,11 @@ module Query_tests = struct
     Alcotest.test_case "index-query-generalize" `Quick (fun () ->
         let index = Index.create () in
         let tree = mkbintree 4 in
-        let _ = Index.insert tree 0 false index in
+        let _ = Index.insert tree 0 index in
         let generalizations = make_generalizations tree in
         (* let generalizations_count = List.length generalizations in *)
         List.iteri
-          (fun i (_path, gen) -> ignore (Index.insert gen i false index))
+          (fun i (_path, gen) -> ignore (Index.insert gen i index))
           generalizations ;
         (* Iterate on all generalizations of (add (var 0) (var 0)).
            We expect to find only a single variable. *)
@@ -405,10 +405,10 @@ module Query_tests = struct
     Alcotest.test_case "index-query-specialize" `Quick (fun () ->
         let index = Index.create () in
         let tree = mkbintree 4 in
-        let _ = Index.insert tree 0 false index in
+        let _ = Index.insert tree 0 index in
         let generalizations = make_generalizations tree in
         List.iteri
-          (fun i (_path, gen) -> ignore (Index.insert gen i false index))
+          (fun i (_path, gen) -> ignore (Index.insert gen i index))
           generalizations ;
         (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
            solution found is the full tree. *)

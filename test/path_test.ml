@@ -4,7 +4,7 @@ open QCheck2
 let rec path_of_list : int list -> Path.t =
  fun list ->
   match list with
-  | [] -> Path.Root
+  | [] -> Path.root
   | i :: list -> Path.at_index i (path_of_list list)
 
 let gen =

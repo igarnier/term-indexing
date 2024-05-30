@@ -80,7 +80,7 @@ let () =
   let t0 = Unix.gettimeofday () in
   iter_exhaustive 4 (fun expr ->
       add_to_set expr ;
-      ignore (Index.insert expr 0 true index)) ;
+      ignore (Index.insert expr 0 index)) ;
   let t1 = Unix.gettimeofday () in
   let time_to_insert = t1 -. t0 in
   let stored = ref 0 in

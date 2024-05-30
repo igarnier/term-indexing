@@ -306,9 +306,15 @@ module type Term_index = sig
 
   val create : unit -> 'a t
 
+  (** [update term f index] modifies the binding associated to [term] in [index].
+      If a value [v] is already bound to [term] in [index], this value is replaced by [f (Some v)].
+      In the other case, the value [f None] is bound to [term]. *)
+  val update : term -> ('a option -> 'a) -> 'a t -> term
+
   (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
-      and returns the canonicalized term. *)
-  val insert : term -> 'a -> bool -> 'a t -> term
+      and returns the canonicalized term. If an existing binding to [term] already exists,
+      it is overwritten. *)
+  val insert : term -> 'a -> 'a t -> term
 
   (** [iter f index] iterates [f] on the bindings of [index]. *)
   val iter : (term -> 'a -> unit) -> 'a t -> unit
