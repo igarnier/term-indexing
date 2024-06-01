@@ -35,7 +35,7 @@ let rewrite_at term path =
         [| something; { node = Prim (Prim.Add, [| lhs; rhs |], _); _ } |],
         _ ) ->
       let replacement = add (mul something lhs) (mul something rhs) in
-      Expr.subst ~term ~path ~replacement
+      Expr.subst ~term ~path (Fun.const replacement)
   | _ -> assert false
 
 (* -------------------- *)

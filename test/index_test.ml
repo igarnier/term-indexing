@@ -359,7 +359,7 @@ module Query_tests = struct
   let make_generalizations term =
     Expr.fold
       (fun _subterm path acc ->
-        (path, Expr.subst ~term ~path ~replacement:(var 0)) :: acc)
+        (path, Expr.subst ~term ~path (Fun.const @@ var 0)) :: acc)
       []
       term
 
@@ -428,7 +428,7 @@ module Query_tests = struct
           Expr.subst
             ~term:tree
             ~path:Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
-            ~replacement:(var 0)
+            (Fun.const @@ var 0)
         in
         Index.iter_specialize
           (fun expr _ ->

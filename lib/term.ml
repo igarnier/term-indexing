@@ -159,27 +159,25 @@ module Make_hash_consed
   (* re-export generic get_subterm *)
   let get_subterm = get_subterm
 
-  let rec subst_aux : term:t -> path:Path.forward -> replacement:t -> t =
-   fun ~term ~path ~replacement ->
+  let rec subst_aux : term:t -> path:Path.forward -> (t -> t) -> t =
+   fun ~term ~path f ->
     match path with
-    | [] -> replacement
+    | [] -> f term
     | index :: l -> (
         match term.Hashcons.node with
         | Var _ -> raise (Get_subterm_oob (path, 0))
-        | Prim (s, subterms, _ub) ->
-            prim s (subst_at subterms index l replacement))
+        | Prim (s, subterms, _ub) -> prim s (subst_at subterms index l f))
 
-  and subst_at : t array -> int -> Path.forward -> t -> t array =
-   fun subterms index path replacement ->
+  and subst_at : t array -> int -> Path.forward -> (t -> t) -> t array =
+   fun subterms index path f ->
     Array.mapi
-      (fun i term ->
-        if i = index then subst_aux ~term ~path ~replacement else term)
+      (fun i term -> if i = index then subst_aux ~term ~path f else term)
       subterms
 
-  let subst : term:t -> path:Path.t -> replacement:t -> t =
-   fun ~term ~path ~replacement ->
+  let subst : term:t -> path:Path.t -> (t -> t) -> t =
+   fun ~term ~path f ->
     let path = Path.reverse path in
-    subst_aux ~term ~path ~replacement
+    subst_aux ~term ~path f
 
   (* TODO optim: consider using an extensible array from int to int instead of an M.t *)
   let canon : t -> (unit -> int) -> int M.t * t =

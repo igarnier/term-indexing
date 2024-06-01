@@ -86,7 +86,7 @@ module type Pattern = sig
   (** [all_matches patt t] returns all paths at which there is a subterm matching [patt] *)
   val all_matches : t -> term -> path list
 
-  (** [focus_matches patt paths] returns the elements of [paths] that correspond to focused terms as specified by [patt]. *)
+  (** [focus_matches patt paths] returns the elements of [paths] that correspond to focused subterms of [patt]. *)
   val focus_matches : t -> path list -> path list
 
   (** [prim p plist] is a pattern matching a term with head bearing a primitive [p] and subterms matching the list pattern [plist]. *)
@@ -187,9 +187,9 @@ module type Term = sig
       @raise Get_subterm_oob if the path is out of bounds. *)
   val get_subterm : t -> Path.t -> t
 
-  (** [subst ~term ~path ~replacement] replaces the subterm of [term] at position [path]
-      by [replacement]. *)
-  val subst : term:t -> path:Path.t -> replacement:t -> t
+  (** [subst ~term ~path f] replaces the subterm of [term] at position [path]
+      by [f (get_subterm term path)]. *)
+  val subst : term:t -> path:Path.t -> (t -> t) -> t
 
   (** [canon t gen] canonicalizes the term [t] using the variable generator [gen].
       Returns the canonicalized term as well as a map from old to canonicalized variables. *)
