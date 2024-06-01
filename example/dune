@@ -1,0 +1,3 @@
+(executable
+ (name constant_folding)
+ (libraries term_indexing unix))
