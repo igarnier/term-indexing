@@ -71,6 +71,8 @@ struct
 
   type t = Ex_patt : (prim, 'f) pattern -> t [@@ocaml.unboxed]
 
+  type matching = t list
+
   type plist = Ex_patt_list : (prim, 'f) pattern_list -> plist
   [@@ocaml.unboxed]
 
@@ -134,8 +136,9 @@ struct
   let pattern_matches (patt : t) (node : term) =
     match patt with Ex_patt patt -> pattern_matches_aux patt node
 
-  let rec all_matches_aux : t -> term -> Path.t -> Path.t list -> Path.t list =
-   fun patt node position acc ->
+  let rec all_matches_aux :
+      matching -> term -> Path.t -> (t * Path.t) list -> (t * Path.t) list =
+   fun matching node position acc ->
     let subterms =
       match node.Hashcons.node with
       | Prim (_, subterms, _) -> subterms
@@ -145,36 +148,27 @@ struct
       Array.fold_left
         (fun (index, acc) subterm ->
           let position = Path.at_index index position in
-          (index + 1, all_matches_aux patt subterm position acc))
+          (index + 1, all_matches_aux matching subterm position acc))
         (0, acc)
         subterms
     in
-    if pattern_matches patt node then position :: acc else acc
+    match List.find_opt (fun patt -> pattern_matches patt node) matching with
+    | None -> acc
+    | Some patt -> (patt, position) :: acc
 
-  let focus_matches pattern paths =
+  let refine_focused pattern path =
     match pattern with
     | Ex_patt patt -> (
         match get_focus patt with
         | Unfocused_tag -> []
-        | Focused_tag ->
-            List.fold_left
-              (fun acc context_path ->
-                get_paths_of_focuses patt context_path acc)
-              []
-              paths)
+        | Focused_tag -> get_paths_of_focuses patt path [])
 
-  let all_matches pattern node =
-    match pattern with
-    | Ex_patt patt -> (
-        match get_focus patt with
-        | Unfocused_tag -> all_matches_aux pattern node Path.root []
-        | Focused_tag ->
-            let paths = all_matches_aux pattern node Path.root [] in
-            List.fold_left
-              (fun acc context_path ->
-                get_paths_of_focuses patt context_path acc)
-              []
-              paths)
+  let all_matches matching node =
+    all_matches_aux matching node Path.root []
+    |> List.concat_map (fun ((Ex_patt patt as pattern), position) ->
+           match get_focus patt with
+           | Unfocused_tag -> [position]
+           | Focused_tag -> refine_focused pattern position)
 
   let uid_gen =
     let x = ref 0 in

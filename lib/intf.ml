@@ -74,6 +74,9 @@ module type Pattern = sig
   (** The type of patterns. *)
   type t
 
+  (** The type of matchings. A matching is a disjunction of patterns. *)
+  type matching = t list
+
   (** The type of patterns on lists of terms. *)
   type plist
 
@@ -83,11 +86,13 @@ module type Pattern = sig
   (** [pattern_matches patt t] checks whether the pattern [patt] matches the term [t] *)
   val pattern_matches : t -> term -> bool
 
-  (** [all_matches patt t] returns all paths at which there is a subterm matching [patt] *)
-  val all_matches : t -> term -> path list
+  (** [all_matches t matching] returns all paths at which there is a subterm satisfying [matching] *)
+  val all_matches : matching -> term -> path list
 
-  (** [focus_matches patt paths] returns the elements of [paths] that correspond to focused subterms of [patt]. *)
-  val focus_matches : t -> path list -> path list
+  (** [refine_focused patt paths] returns the refinements of [path] that correspond to focused subterms of [patt].
+      If [patt] is does not specify focii, the result is the empty list.
+ *)
+  val refine_focused : t -> path -> path list
 
   (** [prim p plist] is a pattern matching a term with head bearing a primitive [p] and subterms matching the list pattern [plist]. *)
   val prim : prim -> plist -> t

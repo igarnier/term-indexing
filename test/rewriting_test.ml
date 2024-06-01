@@ -58,7 +58,7 @@ let () =
 (* Matches are produced in a depth-first fashion, hence matches
    closer to the root are closer to the beginning of the list of
    matches. *)
-let matches = Patt.all_matches pattern expression
+let matches = Patt.all_matches [pattern] expression
 
 let () =
   match List.map Path.to_string matches with
