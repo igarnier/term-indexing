@@ -212,6 +212,10 @@ module type Term = sig
 
   (** Pretty-printing of terms. *)
   val pp : Format.formatter -> t -> unit
+
+  (** [uid t] returns a unique integer attached to [t]. It is guaranteed that if two terms
+      have the same [uid], they are equal. *)
+  val uid : t -> int
 end
 
 (** The module type of substitutions *)

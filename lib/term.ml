@@ -210,6 +210,8 @@ module Make_hash_consed
 
   (* re-export pretty-printer *)
   let pp fmtr term = pp P.pp fmtr term
+
+  let uid term = term.Hashcons.tag
 end
 
 module Default_map : Intf.Map with type key = int = struct
