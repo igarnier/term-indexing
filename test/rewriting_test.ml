@@ -62,7 +62,7 @@ let matches = Patt.all_matches [pattern] expression
 
 let () =
   match List.map Path.to_string matches with
-  | ["0 -> *"; "0 -> 1 -> *"; "0 -> 1 -> 1 -> *"] -> ()
+  | ["0 -> 1 -> 1 -> *"; "0 -> 1 -> *"; "0 -> *"] -> ()
   | _ -> assert false
 
 (* Rewrite deeper matches first *)
