@@ -5,19 +5,19 @@ Let us illustrate the features of this library. The entrypoint is the module {!m
 
 {1 Hash-consed first-order terms}
 
-First-order terms are parameterized by a {!Term_indexing.Intf.Signature} which describes the primitives
+First-order terms are parameterized by a {{!Term_indexing.Intf.Signature}[Intf.Signature]} which describes the primitives
 and their arity. A term is either a variable, or constructed by applying a primitive to the right number
 of sub-terms. For instance, the arithmetic expression {m x_0 + x_1 * x_1} can be represented as a term
 a term constructed with primitives for addition and multiplication.
 We'll look at a small language for manipulating such expressions.
 
 {[
-open Term_rewriting
+open Term_indexing
 
-(** The type of primitives *)
+(* The type of primitives *)
 type prim = Add | Mul | Neg | Float of float
 
-(** [Prim] implements [Intf.Signature]  *)
+(* [Prim] implements [Intf.Signature]  *)
 module Prim : Intf.Signature with type t = prim = struct
 
   type t = prim
@@ -30,7 +30,7 @@ module Prim : Intf.Signature with type t = prim = struct
 
   let pp fmtr = ...
 
-  (** Each primitive is associated to an arity, which corresponds to the number
+  (* Each primitive is associated to an arity, which corresponds to the number
       of function maps each constructor to its number of expected arguments;
       e.g. addition is a binary operation, negation is a unary operation and
       constants are 0-ary.  *)
@@ -38,18 +38,19 @@ module Prim : Intf.Signature with type t = prim = struct
 end
 ]}
 
-The functor {!Term_indexing.Term.Make_hash_consed} takes a module implenting
-{!Term_indexing.Intf.Signature} and returns a module implementing operations to create
-and manipulate terms over the given signature (see {!Term_indexing.Intf.Term}).
+The functor {{!Term_indexing.Term.Make_hash_consed}[Term.Make_hash_consed]} takes a module implenting
+{{!Term_indexing.Intf.Signature}[Intf.Signature]} and returns a module implementing operations to create
+and manipulate terms over the given signature (see {{!Term_indexing.Intf.Term}[Intf.Term]}).
 
 {[
 module Expr = Term.Make_hash_consed (Prim) (Term.Default_map)
 ]}
 
-Terms are constructed using the functions {!Expr.prim} and {!Expr.var}
+Terms are constructed using the functions
+{{!Term_indexing.Intf.Term.prim}[Expr.prim]} and {{!Term_indexing.Intf.Term.val-var}[Expr.var]}
 
 Let us define some convenient wrappers to create terms. Note that the correctness
-of arities is dynamically checked by [Expr.prim].
+of arities is dynamically checked by {{!Term_indexing.Intf.Term.prim}[Expr.prim]}.
 
 {[
 let add x y = Expr.prim Add [| x; y |]
@@ -68,7 +69,135 @@ The mathematical expression {m x_0 + x_1 * x_1} can be represented by the term
 let t = add (var 0) (mul (var 1) (var 1))
 ]}
 
-{1 Folding over and rewriting terms}
+{1 Folding over terms}
 
-{!Term_indexing.Term.Make_hash_consed} implements functions to fold over terms and perform
-basic rewriting operations.
+{{!Term_indexing.Term.Make_hash_consed}[Term.Make_hash_consed]} implements functions to fold over terms
+and perform basic rewriting operations. Rewriting consists in replacing a subterm at a given
+{{!Term_indexing.Path.t}[Path.t]} with
+anoter term. For instance, for [t = add (var 0) (mul (var 1) (var 1))]:
+{ul
+ {- the subterm at [p = Term_indexing.Path.root] is [t] itself}
+ {- the subterm at [p = at_index 0 Path.root] is [var 0]}
+ {- the subterm at [p = at_index 1 Path.root] is [mul (var 1) (var 1)]}
+ {- the subterm at [p = at_index 0 (at_index 1 Path.root)] is [(var 1)]}}
+
+The function {{!Term_indexing.Term.fold}[Expr.fold]} allows to fold over all subterms of [t]
+along with their paths in [t]. Let's try:
+
+{[
+let all_subterms = Expr.fold (fun subt p acc -> (p, subt) :: acc) [] t
+
+let () =
+  List.iter
+    (fun (p, subt) -> Format.printf "%a -> %a@." Path.pp p Expr.pp subt)
+    all_subterms
+]}
+
+{v
+1 -> 1 -> * -> V(1)
+0 -> 1 -> * -> V(1)
+1 -> * -> Mul(V(1), V(1))
+0 -> * -> V(0)
+* -> Add(V(0), Mul(V(1), V(1)))
+v}
+
+{1 Rewriting}
+
+We will illustrate rewriting by implementing some toy constant folding.
+The {{!Term_indexing.Pattern.Make}[Pattern.Make]} functor provides facilities
+to search for subterms having some particular shape. Let us instantiate this functor.
+
+{[
+module Patt = Pattern.Make(Prim)(Expr)
+]}
+
+We then define some patterns corresponding to terms that can be folded.
+
+{[
+(* A pattern matching any float constant. [prim_pred] is a generic predicate on primitives. *)
+let float_patt =
+  Patt.prim_pred (function Float _ -> true | _ -> false) Patt.list_empty
+
+(* A pattern matching an addition of float constants. *)
+let add_patt = Patt.(prim Prim.Add (float_patt @. float_patt @. list_empty))
+
+(* A pattern matching a multiplication of float constants. *)
+let mul_patt = Patt.(prim Prim.Add (float_patt @. float_patt @. list_empty))
+
+(* A pattern matching negation of a float constant. *)
+let neg_patt = Patt.(prim Prim.Neg (float_patt @. list_empty))
+]}
+
+Upon detecting such subterms, we will need to reduce them. The following illustrates how to do so using {{!Term_indexing.Intf.Term.destruct}[Expr.destruct]}, which performs pattern matching on terms. It takes the following arguments:
+{ul
+{- the term to be analyzed}
+{- a function to be called if the term is a primitive, to which the primitive and subterms are passed}
+{- a function to be called if the term is a variable, to which the variable is passed.}
+}
+
+[get_float] extracts the floating point value out of a [Float] term, or returns [None] if not possible.
+{[
+let get_float (term : Expr.t) : float option =
+  Expr.destruct
+    term
+    (fun prim _ -> match prim with Prim.Float f -> Some f | _ -> None)
+    (fun _ -> None)
+]}
+
+[reduce] performs a step of constant folding if possible.
+
+{[
+let reduce (term : Expr.t) : Expr.t option =
+  Expr.destruct
+    term
+    (fun prim operands ->
+      match (prim, operands) with
+      | ((Add | Mul), [| l; r |]) ->
+          Option.bind (get_float l) @@ fun l ->
+          Option.bind (get_float r) @@ fun r ->
+          Option.some
+            (match prim with
+            | Add -> float (l +. r)
+            | Mul -> float (l *. r)
+            | _ -> assert false)
+      | (Neg, [| x |]) ->
+          Option.bind (get_float x) @@ fun x -> Option.some (float (-.x))
+      | _ -> Option.none)
+    (fun _ -> Option.none)
+]}
+
+Constant folding iteratively looks for subterms to simplify until none is left.
+{{!Term_indexing.Intf.Pattern.first_match}[Patt.first_matches]} searches
+the term for an occurrence of a subterm matching any of the patterns in the
+provided list. If a pattern is found, we perform the rewrite, print the outcome
+and continue.
+
+{[
+let rec rewrite_until_fixpoint term =
+  let matches = Patt.first_match [add_patt; mul_patt; neg_patt] term in
+  match matches with
+  | [] -> term
+  | path :: _ ->
+      let rewritten =
+        Expr.subst ~term ~path (fun e ->
+            match reduce e with
+            | Some reduced -> reduced
+            | None -> failwith "can't happen")
+      in
+      Format.printf "%a -> %a@." Expr.pp term Expr.pp rewritten ;
+      rewrite_until_fixpoint rewritten
+]}
+Let's try this out on some dummy term.
+{[
+let expression = add (float 1.0) (add (float 2.0) (mul (float 3.0) (float 4.0)))
+
+let normalized = rewrite_until_fixpoint expression
+]}
+The sequence of rewrites is:
+{v
+Add(1.0, Add(2.0, Mul(3.0, 4.0))) -> Add(1.0, Add(2.0, 12.0))
+Add(1.0, Add(2.0, 12.0)) -> Add(1.0, 14.0)
+Add(1.0, 14.0) -> 15.0
+v}
+
+{1 Indexing}
