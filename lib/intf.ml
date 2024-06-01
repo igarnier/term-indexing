@@ -89,6 +89,13 @@ module type Pattern = sig
   (** [all_matches t matching] returns all paths at which there is a subterm satisfying [matching] *)
   val all_matches : matching -> term -> path list
 
+  (** [first_match t matching] returns the first paths, if any, where there is a subterm satisfying [matching].
+
+      If the matched pattern does not specify focused subterms, the result is at most a singleton list.
+      If the matched pattern specifies focused subterms, the result is a list of paths, one for each focused subterm.
+ *)
+  val first_match : matching -> term -> path list
+
   (** [refine_focused patt paths] returns the refinements of [path] that correspond to focused subterms of [patt].
       If [patt] is does not specify focii, the result is the empty list.
  *)

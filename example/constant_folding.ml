@@ -81,7 +81,7 @@ let reduce (term : Expr.t) : Expr.t option =
     (fun _ -> Option.some term)
 
 let rec rewrite_until_fixpoint term =
-  let matches = Patt.all_matches [add_patt; mul_patt; neg_patt] term in
+  let matches = Patt.first_match [add_patt; mul_patt; neg_patt] term in
   match matches with
   | [] -> term
   | path :: _ ->

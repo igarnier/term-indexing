@@ -80,11 +80,10 @@ struct
 
   let rec get_paths_of_focuses :
       (prim, focused) pattern -> Path.t -> Path.t list -> Path.t list =
-   fun { patt_desc; _ } position acc ->
+   fun { patt_desc; _ } path acc ->
     match patt_desc with
-    | Patt_prim (_, subterms) ->
-        get_paths_of_focuses_list subterms position 0 acc
-    | Patt_focus _ -> position :: acc
+    | Patt_prim (_, subterms) -> get_paths_of_focuses_list subterms path 0 acc
+    | Patt_focus _ -> path :: acc
 
   and get_paths_of_focuses_list :
       (prim, focused) pattern_list ->
@@ -92,18 +91,18 @@ struct
       int ->
       Path.t list ->
       Path.t list =
-   fun patt_list position index acc ->
+   fun patt_list path index acc ->
     match patt_list with
     | Patt_list_cons (prim, tail, wit) -> (
         match wit with
         | FU ->
-            let prim_position = Path.at_index index position in
-            get_paths_of_focuses prim prim_position acc
-        | UF -> get_paths_of_focuses_list tail position (index + 1) acc
+            let prim_path = Path.at_index index path in
+            get_paths_of_focuses prim prim_path acc
+        | UF -> get_paths_of_focuses_list tail path (index + 1) acc
         | FF ->
-            let prim_position = Path.at_index index position in
-            let acc = get_paths_of_focuses prim prim_position acc in
-            get_paths_of_focuses_list tail position (index + 1) acc)
+            let prim_path = Path.at_index index path in
+            let acc = get_paths_of_focuses prim prim_path acc in
+            get_paths_of_focuses_list tail path (index + 1) acc)
 
   let rec pattern_matches_aux : type f. (prim, f) pattern -> term -> bool =
    fun patt node ->
@@ -136,9 +135,33 @@ struct
   let pattern_matches (patt : t) (node : term) =
     match patt with Ex_patt patt -> pattern_matches_aux patt node
 
+  exception Found of t * Path.t
+
+  let first_match_aux matching term path =
+    let rec loop : matching -> term -> Path.t -> unit =
+     fun matching node path ->
+      let subterms =
+        match node.Hashcons.node with
+        | Prim (_, subterms, _) -> subterms
+        | Var _ -> [||]
+      in
+      Array.iteri
+        (fun index subterm ->
+          let path = Path.at_index index path in
+          loop matching subterm path)
+        subterms ;
+      match List.find_opt (fun patt -> pattern_matches patt node) matching with
+      | None -> ()
+      | Some patt -> raise (Found (patt, path))
+    in
+    try
+      loop matching term path ;
+      None
+    with Found (patt, path) -> Some (patt, path)
+
   let rec all_matches_aux :
       matching -> term -> Path.t -> (t * Path.t) list -> (t * Path.t) list =
-   fun matching node position acc ->
+   fun matching node path acc ->
     let subterms =
       match node.Hashcons.node with
       | Prim (_, subterms, _) -> subterms
@@ -147,14 +170,14 @@ struct
     let (_, acc) =
       Array.fold_left
         (fun (index, acc) subterm ->
-          let position = Path.at_index index position in
-          (index + 1, all_matches_aux matching subterm position acc))
+          let path = Path.at_index index path in
+          (index + 1, all_matches_aux matching subterm path acc))
         (0, acc)
         subterms
     in
     match List.find_opt (fun patt -> pattern_matches patt node) matching with
     | None -> acc
-    | Some patt -> (patt, position) :: acc
+    | Some patt -> (patt, path) :: acc
 
   let refine_focused pattern path =
     match pattern with
@@ -165,10 +188,18 @@ struct
 
   let all_matches matching node =
     all_matches_aux matching node Path.root []
-    |> List.concat_map (fun ((Ex_patt patt as pattern), position) ->
+    |> List.concat_map (fun ((Ex_patt patt as pattern), path) ->
            match get_focus patt with
-           | Unfocused_tag -> [position]
-           | Focused_tag -> refine_focused pattern position)
+           | Unfocused_tag -> [path]
+           | Focused_tag -> refine_focused pattern path)
+
+  let first_match matching node =
+    match first_match_aux matching node Path.root with
+    | None -> []
+    | Some ((Ex_patt patt as pattern), path) -> (
+        match get_focus patt with
+        | Unfocused_tag -> [path]
+        | Focused_tag -> refine_focused pattern path)
 
   let uid_gen =
     let x = ref 0 in
@@ -269,7 +300,7 @@ end = struct
   let table : (key, path list) Hashtbl.t = Hashtbl.create 7919
 
   let rec all_matches_aux : t -> term -> Path.t -> Path.t list -> Path.t list =
-   fun patt node position acc ->
+   fun patt node path acc ->
     let patt_uid = uid patt in
     let node_tag = node.tag in
     match Hashtbl.find_opt table { patt_uid; node_tag } with
@@ -282,12 +313,12 @@ end = struct
         let (_, acc) =
           Array.fold_left
             (fun (index, acc) subterm ->
-              let position = Path.at_index index position in
-              (index + 1, all_matches_aux patt subterm position acc))
+              let path = Path.at_index index path in
+              (index + 1, all_matches_aux patt subterm path acc))
             (0, acc)
             subterms
         in
-        if pattern_matches patt node then position :: acc else acc
+        if pattern_matches patt node then path :: acc else acc
     | Some res -> List.rev_append res acc
 
   let all_matches_with_hash_consing pattern node =
