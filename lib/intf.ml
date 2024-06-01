@@ -166,6 +166,9 @@ module type Term = sig
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
 
+  (** [destruct t ifprim ifvar] performs case analysis on the term [t] *)
+  val destruct : t -> (prim -> t array -> 'a) -> (var -> 'a) -> 'a
+
   (** [fold f acc term] folds [f] over the subterms of [t] *)
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
 

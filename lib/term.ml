@@ -129,6 +129,11 @@ module Make_hash_consed
   let is_var term =
     match term.Hashcons.node with Var v -> Some v | Prim (_, _, _) -> None
 
+  let destruct term ifprim ifvar =
+    match term.Hashcons.node with
+    | Prim (p, subterms, _) -> ifprim p subterms
+    | Var v -> ifvar v
+
   (* re-export generic fold *)
   let fold = fold
 
