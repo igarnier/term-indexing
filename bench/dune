@@ -1,4 +1,4 @@
 (executable
  (name bench)
- (libraries term_indexing unix)
+ (libraries term_indexing unix fmt)
 )
