@@ -141,8 +141,8 @@ module type Pattern = sig
   val uid : t -> int
 end
 
-(** The module type of first-order terms *)
-module type Term = sig
+(** [Term_core] specifies the core types and operations related to first-order terms. *)
+module type Term_core = sig
   (** The type of primitives, i.e. the symbols. Each value of type [prim] has a definite arity. *)
   type prim
 
@@ -151,17 +151,8 @@ module type Term = sig
 
   type var := int
 
-  (** The type of polymorphic maps indexed by variables *)
-  type 'a var_map
-
-  (** [equal t1 t2] is an O(1) equality function on terms *)
-  val equal : t -> t -> bool
-
-  (** [equal t1 t2] is an O(1) total order on terms. This is not a structural order *)
-  val compare : t -> t -> int
-
-  (** [hash t] is an O(1) hash function on terms *)
-  val hash : t -> int
+  (** Pretty-printing of terms. *)
+  val pp : Format.formatter -> t -> unit
 
   (** [prim p ts] constructs a term with head equal to [p] and subterms equal to [ts]
 
@@ -171,24 +162,14 @@ module type Term = sig
   (** [var v] construcst a variable [v] *)
   val var : var -> t
 
-  (** [ub t] is an upper bound on the absolute value of variables contained in [t].
-      Equal to {!Int_option.none} if [t] does not contain variables. *)
-  val ub : t -> Int_option.t
+  (** [destruct t ifprim ifvar] performs case analysis on the term [t] *)
+  val destruct : t -> (prim -> t array -> 'a) -> (var -> 'a) -> 'a
 
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
 
-  (** [destruct t ifprim ifvar] performs case analysis on the term [t] *)
-  val destruct : t -> (prim -> t array -> 'a) -> (var -> 'a) -> 'a
-
   (** [fold f acc term] folds [f] over the subterms of [t] *)
   val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
-
-  (** [fold_variables f acc t] folds [f] over the variables of [t] *)
-  val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
-
-  (** [map_variables f t] replaces all variables [var i] present in [t] by [f i]. *)
-  val map_variables : (int -> t) -> t -> t
 
   (** [get_subterm_fwd t fpth] is the subterm of [t] at position defined by the forward path
       [fpth].
@@ -196,6 +177,25 @@ module type Term = sig
       @raise Get_subterm_oob if the path is out of bounds.
   *)
   val get_subterm_fwd : t -> Path.forward -> t
+end
+
+(** The module type of first-order terms *)
+module type Term = sig
+  include Term_core
+
+  (** The type of polymorphic maps indexed by variables *)
+  type 'a var_map
+
+  include Hashed with type t := t
+
+  type var := int
+
+  (** [ub t] is an upper bound on the absolute value of variables contained in [t].
+      Equal to {!Int_option.none} if [t] does not contain variables. *)
+  val ub : t -> Int_option.t
+
+  (** [map_variables f t] replaces all variables [var i] present in [t] by [f i]. *)
+  val map_variables : (int -> t) -> t -> t
 
   (** [get_subterm t pth] is the subterm of [t] at position defined by the path [pth].
 
@@ -206,12 +206,12 @@ module type Term = sig
       by [f (get_subterm term path)]. *)
   val subst : term:t -> path:Path.t -> (t -> t) -> t
 
+  (** [fold_variables f acc t] folds [f] over the variables of [t] *)
+  val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
+
   (** [canon t gen] canonicalizes the term [t] using the variable generator [gen].
       Returns the canonicalized term as well as a map from old to canonicalized variables. *)
   val canon : t -> (unit -> var) -> var var_map * t
-
-  (** Pretty-printing of terms. *)
-  val pp : Format.formatter -> t -> unit
 
   (** [uid t] returns a unique integer attached to [t]. It is guaranteed that if two terms
       have the same [uid], they are equal. *)
