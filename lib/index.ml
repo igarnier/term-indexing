@@ -33,6 +33,10 @@ module type S = sig
       [residual1] is a substitution such that [result] is equal to [s1] after composing with [residual1],
       and [residual2] is a substitution such that [result] is equal to [s2] after composing [residual2]. *)
     val mscg_subst : subst -> subst -> (unit -> int) -> subst * subst * subst
+
+    val max_depth : 'a t -> int
+
+    val max_width : 'a t -> int
   end
 end
 
@@ -59,6 +63,27 @@ module Make
       subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
+
+  module Stats = struct
+    let rec max_depth_node node =
+      1
+      + Vec.fold (fun acc node -> max acc (max_depth_node node)) 0 node.subtrees
+
+    let max_depth index =
+      Vec.fold (fun acc node -> max acc (max_depth_node node)) 0 index.nodes
+
+    let rec max_width_node node =
+      Vec.fold
+        (fun acc node -> max acc (max_width_node node))
+        (Vec.length node.subtrees)
+        node.subtrees
+
+    let max_width index =
+      Vec.fold
+        (fun acc node -> max acc (max_width_node node))
+        (Vec.length index.nodes)
+        index.nodes
+  end
 
   (* Invariants:
      - indicator variables are of the form 4k
@@ -104,28 +129,57 @@ module Make
       counter := v + 4 ;
       v
 
-  let rec to_box pp_data node =
-    let open PrintBox in
-    hlist
-      [ box_of_subst node.head;
-        vlist
-          (box_of_data pp_data node.data
-          :: box_of_subtrees pp_data node.subtrees) ]
+  let rec term_to_tree : term -> PrintBox.t =
+   fun term ->
+    match term.Hashcons.node with
+    | Term.Prim (prim, subtrees, _) ->
+        PrintBox.tree
+          (PrintBox.text (Format.asprintf "%a" P.pp prim))
+          (Array.to_list (Array.map term_to_tree subtrees))
+    | Var v -> PrintBox.text (Format.asprintf "V(%d)" v)
 
-  and box_of_data pp_data data =
+  let box_of_data pp_data data =
     let open PrintBox in
     match data with
     | None -> text "<>"
     | Some data -> text (Format.asprintf "%a" pp_data data)
 
-  and box_of_subst subst = PrintBox.text (Format.asprintf "%a" S.pp subst)
+  (* let box_of_subst subst = *)
+  (*   let open PrintBox in *)
+  (*   frame *)
+  (*   @@ vlist *)
+  (*        ~bars:true *)
+  (*        (List.map (fun (v, t) -> hlist [term_to_tree v; term_to_tree t]) subst) *)
 
-  and box_of_subtrees pp_data vec = Vec.to_list vec |> List.map (to_box pp_data)
+  let box_of_subst_with_data pp_data subst data =
+    let open PrintBox in
+    frame
+    @@ hlist
+         [ vlist
+             ~bars:true
+             (List.map
+                (fun (v, t) -> hlist [text (string_of_int v); term_to_tree t])
+                (S.to_seq subst |> List.of_seq));
+           box_of_data pp_data data ]
 
-  (* let pp_node pp_data fmtr node = PrintBox_text.pp fmtr (to_box pp_data node) *)
+  (* let pp_subst fmtr subst = PrintBox_text.pp fmtr (box_of_subst subst) *)
+
+  let rec to_box pp_data node =
+    let open PrintBox in
+    tree
+      ~indent:4
+      (box_of_subst_with_data pp_data node.head node.data)
+      (List.map (to_box pp_data) (Vec.to_list node.subtrees))
+
+  and box_of_subtrees pp_data vec =
+    let open PrintBox in
+    align
+      ~h:`Center
+      ~v:`Center
+      (hlist (List.map (to_box pp_data) (Vec.to_list vec)))
 
   let pp pp_data fmtr tree =
-    PrintBox_text.pp fmtr (PrintBox.vlist (box_of_subtrees pp_data tree.nodes))
+    PrintBox_text.pp fmtr (box_of_subtrees pp_data tree.nodes)
 
   let create () = { fresh = ref 0; nodes = Vec.create () }
 
@@ -448,5 +502,9 @@ module Make
     let mscg = mscg
 
     let mscg_subst = mscg_subst
+
+    let max_depth = Stats.max_depth
+
+    let max_width = Stats.max_width
   end
 end
