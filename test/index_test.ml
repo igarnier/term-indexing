@@ -166,125 +166,168 @@ module Mscg_tests = struct
           (neg (var (Index.Internal_for_tests.indicator 5))))
 end
 
-let subst_tree_insert_terms =
-  Alcotest.test_case "subst-tree-insert" `Quick (fun () ->
-      let index = Index.create () in
-      assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (add (float 1.0) (float 1.0)) 0 index in
-      assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (float 1.0) 0 index in
-      assert (Index.Internal_for_tests.check_invariants index) ;
-      let _ = Index.insert (add (float 1.0) (float 1.0)) 1 index in
-      assert (Index.Internal_for_tests.check_invariants index))
+module Make_shared_test (Index : sig
+  type 'a t
 
-let subst_tree_insert_terms2 =
-  Alcotest.test_case "subst-tree-insert-terms-2" `Quick (fun () ->
-      let index = Index.create () in
-      let _ = Index.insert (neg (var 543159235)) 0 index in
-      let _ = Index.insert (neg (float ~-.500.0)) 1 index in
-      let _ = Index.insert (neg (div (float 42.0) (float 73.))) 2 index in
-      let _ = Index.insert (neg (var 543159235)) 3 index in
-      Index.iter
-        (fun term data ->
-          if Expr.equal term (neg (var 543159235)) then assert (data = 3)
-          else ())
-        index)
+  type term = Arith.Expr.t
 
-let subst_tree_insert_random_term =
-  QCheck2.Test.make
-    ~name:"subst-tree-insert-random-term"
-    ~count:100
-    (QCheck2.Gen.set_shrink
-       (fun _ -> Seq.empty)
-       (QCheck2.Gen.array_size
-          (QCheck2.Gen.return 10)
-          (Arith.term_gen (fun _ -> None))))
-    (fun terms ->
-      let index = Index.create () in
-      let table = Hashtbl.create (Array.length terms) in
-      let exception Unexpected_key of Expr.t in
-      let exception Wrong_value of Expr.t * int * int in
-      let pp_arr =
-        Format.pp_print_array
-          ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
-          Expr.pp
-      in
-      let pp_table fmtr table =
-        Format.pp_print_seq
-          ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
-          (fun fmtr (k, v) -> Format.fprintf fmtr "@[%a@] -> %d" Expr.pp k v)
-          fmtr
-          (Hashtbl.to_seq table)
-      in
-      try
-        Array.iteri
-          (fun i t ->
-            let t = Index.insert t i index in
-            Hashtbl.replace table t i ;
-            assert (Index.Internal_for_tests.check_invariants index))
-          terms ;
+  val name : string
+
+  val create : unit -> 'a t
+
+  val insert : term -> 'a -> 'a t -> unit
+
+  val iter : (term -> 'a -> unit) -> 'a t -> unit
+
+  val pp : 'a Fmt.t -> 'a t Fmt.t
+
+  module Internal_for_tests : sig
+    val check_invariants : 'a t -> bool
+
+    val canon : term -> term
+
+    val pp_error : Format.formatter -> exn -> unit
+  end
+end) =
+struct
+  let named s = Index.name ^ "-" ^ s
+
+  let subst_tree_insert_terms =
+    Alcotest.test_case (named "subst-tree-insert") `Quick (fun () ->
+        let index = Index.create () in
+        assert (Index.Internal_for_tests.check_invariants index) ;
+        let _ = Index.insert (add (float 1.0) (float 1.0)) 0 index in
+        assert (Index.Internal_for_tests.check_invariants index) ;
+        let _ = Index.insert (float 1.0) 0 index in
+        assert (Index.Internal_for_tests.check_invariants index) ;
+        let _ = Index.insert (add (float 1.0) (float 1.0)) 1 index in
+        assert (Index.Internal_for_tests.check_invariants index))
+
+  let subst_tree_insert_terms2 =
+    Alcotest.test_case (named "subst-tree-insert-terms-2") `Quick (fun () ->
+        let index = Index.create () in
+        let _ = Index.insert (neg (var 543159235)) 0 index in
+        let _ = Index.insert (neg (float ~-.500.0)) 1 index in
+        let _ = Index.insert (neg (div (float 42.0) (float 73.))) 2 index in
+        let _ = Index.insert (neg (var 543159235)) 3 index in
         Index.iter
           (fun term data ->
-            match Hashtbl.find_opt table term with
-            | None -> raise (Unexpected_key term)
-            | Some v ->
-                if Int.equal v data then ()
-                else raise (Wrong_value (term, v, data)))
-          index ;
-        true
-      with
-      | Index.Internal_for_tests.Invariant_violation (path, head, head') ->
-          QCheck2.Test.fail_reportf
-            "Invariant violated@.@[at path %a@,\
-             head=%a@,\
-             head'=%a@]@.@[%a@]@.Inputs=@.@[%a@]"
-            (Format.pp_print_list
-               ~pp_sep:(fun fmtr () -> Format.fprintf fmtr ".")
-               Format.pp_print_int)
-            path
-            Subst.pp
-            head
-            Subst.pp
-            head'
-            (Index.pp Format.pp_print_int)
-            index
-            pp_arr
-            terms
-      | Unexpected_key s ->
-          QCheck2.Test.fail_reportf
-            "@[Unexpected key@.@[%a@]@.in \
-             index@.@[%a@]@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
+            if Expr.equal term (neg (var 543159235)) then assert (data = 3)
+            else ())
+          index)
+
+  let subst_tree_insert_random_term =
+    QCheck2.Test.make
+      ~name:(named "subst-tree-insert-random-term")
+      ~count:100
+      (QCheck2.Gen.set_shrink
+         (fun _ -> Seq.empty)
+         (QCheck2.Gen.array_size
+            (QCheck2.Gen.return 10)
+            (Arith.term_gen (fun _ -> None))))
+      (fun terms ->
+        let index = Index.create () in
+        let table : (Expr.t, _) Hashtbl.t =
+          Hashtbl.create (Array.length terms)
+        in
+        let exception Unexpected_key of Expr.t in
+        let exception Wrong_value of Expr.t * int * int in
+        let pp_arr =
+          Format.pp_print_array
+            ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
             Expr.pp
-            s
-            (Index.pp Format.pp_print_int)
-            index
-            pp_arr
-            terms
-            pp_table
-            table
-      | Wrong_value (s, expected, got) ->
-          QCheck2.Test.fail_reportf
-            "@[Wrong value. In index:@.@[%a@]@.At key %a, expected %d, got \
-             %d@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
-            (Index.pp Format.pp_print_int)
-            index
-            Expr.pp
-            s
-            expected
-            got
-            pp_arr
-            terms
-            pp_table
-            table
-      | exn ->
-          QCheck2.Test.fail_reportf
-            "exn %s@.@[%a@]@.Inputs=@.@[%a@]"
-            (Printexc.to_string exn)
-            (Index.pp Format.pp_print_int)
-            index
-            pp_arr
-            terms)
-  |> QCheck_alcotest.to_alcotest
+        in
+        let pp_table fmtr table =
+          Format.pp_print_seq
+            ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
+            (fun fmtr (k, v) -> Format.fprintf fmtr "@[%a@] -> %d" Expr.pp k v)
+            fmtr
+            (Hashtbl.to_seq table)
+        in
+        try
+          Array.iteri
+            (fun i t ->
+              let ct = Index.Internal_for_tests.canon t in
+              Index.insert ct i index ;
+              Hashtbl.replace table ct i ;
+              assert (Index.Internal_for_tests.check_invariants index))
+            terms ;
+          Index.iter
+            (fun term data ->
+              match Hashtbl.find_opt table term with
+              | None -> raise (Unexpected_key term)
+              | Some v ->
+                  if Int.equal v data then ()
+                  else raise (Wrong_value (term, v, data)))
+            index ;
+          true
+        with
+        | Unexpected_key s ->
+            QCheck2.Test.fail_reportf
+              "@[Unexpected key@.@[%a@]@.in \
+               index@.@[%a@]@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
+              Expr.pp
+              s
+              (Index.pp Format.pp_print_int)
+              index
+              pp_arr
+              terms
+              pp_table
+              table
+        | Wrong_value (s, expected, got) ->
+            QCheck2.Test.fail_reportf
+              "@[Wrong value. In index:@.@[%a@]@.At key %a, expected %d, got \
+               %d@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
+              (Index.pp Format.pp_print_int)
+              index
+              Expr.pp
+              s
+              expected
+              got
+              pp_arr
+              terms
+              pp_table
+              table
+        | exn ->
+            Index.Internal_for_tests.pp_error Format.std_formatter exn ;
+            QCheck2.Test.fail_reportf
+              "exn %s@.@[%a@]@.Inputs=@.@[%a@]"
+              (Printexc.to_string exn)
+              (Index.pp Format.pp_print_int)
+              index
+              pp_arr
+              terms)
+    |> QCheck_alcotest.to_alcotest
+end
+
+module Shared_naive = Make_shared_test (struct
+  include Index
+
+  let name = "index-naive"
+
+  let insert f data index = ignore (insert f data index)
+end)
+
+module Shared_efficient = Make_shared_test (struct
+  include Index2
+
+  type term = Arith.Expr.t
+
+  let name = "index-efficient"
+
+  let iter f index =
+    iter (fun iterm data -> f (Internal_term.to_term iterm) data) index
+
+  let insert f data index = ignore (insert f data index)
+
+  module Internal_for_tests = struct
+    include Internal_for_tests
+
+    let canon = Index.Internal_for_tests.canon
+
+    let pp_error = Index.Internal_for_tests.pp_error
+  end
+end)
 
 module Query_tests = struct
   let collect_unifiable query index =
@@ -450,9 +493,12 @@ let () =
       ( "mscg-subst",
         Mscg_tests.[mscg_nofail; mscg_disjoint_support_empty; mscg_subst] );
       ( "subst-tree",
-        [ subst_tree_insert_terms;
-          subst_tree_insert_terms2;
-          subst_tree_insert_random_term ] );
+        [ Shared_naive.subst_tree_insert_terms;
+          Shared_naive.subst_tree_insert_terms2;
+          Shared_naive.subst_tree_insert_random_term;
+          Shared_efficient.subst_tree_insert_terms;
+          Shared_efficient.subst_tree_insert_terms2;
+          Shared_efficient.subst_tree_insert_random_term ] );
       ( "index-basic",
         Query_tests.
           [ index_basic;

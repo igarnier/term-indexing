@@ -37,6 +37,10 @@ module type S = sig
     val max_depth : 'a t -> int
 
     val max_width : 'a t -> int
+
+    val canon : term -> term
+
+    val pp_error : exn Fmt.t
   end
 end
 
@@ -345,8 +349,10 @@ module Make
     in
     insert_aux subst tree.nodes 0
 
+  let canon term = snd (T.canon term (gen_index ()))
+
   let update term f tree =
-    let (_, term) = T.canon term (gen_index ()) in
+    let term = canon term in
     update_subst (S.of_seq (Seq.return (indicator 0, term))) f tree ;
     term
 
@@ -506,5 +512,22 @@ module Make
     let max_depth = Stats.max_depth
 
     let max_width = Stats.max_width
+
+    let canon = canon
+
+    let pp_error : exn Fmt.t =
+     fun fmtr exn ->
+      match exn with
+      | Invariant_violation (path, head, head') ->
+          Format.fprintf
+            fmtr
+            "Invariant violated@.@[at path %a@,head=%a@,head'=%a@]@."
+            (Fmt.list ~sep:(Fmt.const Fmt.string ".") Fmt.int)
+            path
+            S.pp
+            head
+            S.pp
+            head'
+      | _ -> ()
   end
 end

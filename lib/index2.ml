@@ -161,8 +161,6 @@ struct
     include Internal_term
   end
 
-  type term = Internal_term.t
-
   type iref = Internal_term.t
 
   type subst = (iref * Internal_term.t) list
