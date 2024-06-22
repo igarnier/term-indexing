@@ -645,16 +645,16 @@ module Make
         let (uf_state, success) = unify uf_state v t in
         if success then unification uf_state rest else (uf_state, false)
 
-  let rec iter_unifiable_node f node root _uf_state =
+  let rec iter_unifiable_node f node root =
     let (uf_state', uf_success) = unification [] node.head in
     if uf_success then (
       (match node.data with None -> () | Some data -> f root data) ;
-      Vec.iter (fun node -> iter_unifiable_node f node root []) node.subtrees)
+      Vec.iter (fun node -> iter_unifiable_node f node root) node.subtrees)
     else () ;
     List.iter (fun (v, d) -> v := d) uf_state'
 
   let iter_unifiable f (index : 'a t) (query : Internal_term.t) =
     index.root := !query ;
-    Vec.iter (fun node -> iter_unifiable_node f node index.root []) index.nodes ;
+    Vec.iter (fun node -> iter_unifiable_node f node index.root) index.nodes ;
     index.root := IVar
 end
