@@ -1,5 +1,40 @@
 module Vec = Containers.Vector
 
+module type S = sig
+  type term
+
+  module Internal_term : sig
+    type t
+
+    val to_term : t -> term
+
+    val pp : t Fmt.t
+  end
+
+  type subst
+
+  type 'a t
+
+  val pp_subst : subst Fmt.t
+
+  val pp : 'a Fmt.t -> 'a t Fmt.t
+
+  val of_term : 'a t -> term -> Internal_term.t
+
+  val create : unit -> 'a t
+
+  val insert : term -> 'a -> 'a t -> unit
+
+  val iter : (Internal_term.t -> 'a -> unit) -> 'a t -> unit
+
+  val iter_unifiable :
+    (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
+
+  module Internal_for_tests : sig
+    val check_invariants : 'a t -> bool
+  end
+end
+
 module IRef = struct
   type 'a ref = { mutable contents : 'a; uid : int }
 
@@ -21,8 +56,8 @@ end
 
 module Make
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) =
-struct
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) :
+  S with type term := T.t = struct
   open IRef
 
   module Internal_term = struct
@@ -30,69 +65,56 @@ struct
 
     type var = int
 
-    type desc = Prim of prim * t array | Var of var | IVar
+    type desc =
+      | Prim of prim * t array
+      | Var of var * t
+          (** External (user-inserted) variables. Contains a pointer
+              to a representative term to be used during unification.
+              A variable which is unset points to [IVar].
+          *)
+      | IVar  (** Internal variables, used to implement sharing in the tree. *)
 
     and t = desc ref
 
+    type var_table = (int, t) Hashtbl.t
+
+    module Pp = struct
+      let pp_uid_opt fmtr = function
+        | None -> ()
+        | Some uid -> Format.fprintf fmtr "%d:" uid
+
+      let rec desc_to_tree : ?uid:int -> desc -> PrintBox.t =
+       fun ?uid desc ->
+        match desc with
+        | Prim (prim, subtrees) ->
+            PrintBox.tree
+              (PrintBox.text (Format.asprintf "%a%a" pp_uid_opt uid P.pp prim))
+              (Array.to_list (Array.map to_tree subtrees))
+        | Var (v, repr) ->
+            PrintBox.tree
+              (PrintBox.text (Format.asprintf "%aV(%d)" pp_uid_opt uid v))
+              [to_tree repr]
+        | IVar -> PrintBox.asprintf "%aivar" pp_uid_opt uid
+
+      and to_tree term = desc_to_tree ~uid:term.uid !term
+
+      let pp fmtr term =
+        let tree = to_tree term in
+        PrintBox_text.pp fmtr tree
+    end
+
+    include Pp
+
     let is_ivar (t : t) = match !t with IVar -> true | _ -> false
-
-    let rec copy : t -> t =
-     fun term ->
-      match !term with
-      | Prim (prim, subtrees) -> ref (Prim (prim, Array.map copy subtrees))
-      | Var v -> ref (Var v)
-      | IVar -> ref IVar
-
-    let pp_uid_opt fmtr = function
-      | None -> ()
-      | Some uid -> Format.fprintf fmtr "%d:" uid
-
-    let rec desc_to_tree : ?uid:int -> desc -> PrintBox.t =
-     fun ?uid desc ->
-      match desc with
-      | Prim (prim, subtrees) ->
-          PrintBox.tree
-            (PrintBox.text (Format.asprintf "%a%a" pp_uid_opt uid P.pp prim))
-            (Array.to_list (Array.map to_tree subtrees))
-      | Var v -> PrintBox.text (Format.asprintf "%aV(%d)" pp_uid_opt uid v)
-      | IVar -> PrintBox.asprintf "%aivar" pp_uid_opt uid
-
-    and to_tree term = desc_to_tree ~uid:term.uid !term
-
-    let pp fmtr term =
-      let tree = to_tree term in
-      PrintBox_text.pp fmtr tree
 
     let prim p subterms = ref (Prim (p, subterms))
 
-    let var v = ref (Var v)
-
-    let destruct term ifprim ifvar =
-      match !term with
-      | Prim (p, subterms) -> ifprim p subterms
-      | Var v -> ifvar v
-      | IVar -> assert false
-
-    let is_var term =
-      match !term with
-      | Var v -> Some v
-      | Prim (_, _) -> None
-      | IVar -> assert false
-
-    let rec fold f acc term path =
-      let acc = f term path acc in
-      match !term with
-      | Var _ -> acc
-      | Prim (_, subterms) -> fold_subterms f acc subterms path 0
-      | IVar -> assert false
-
-    and fold_subterms f acc subterms path i =
-      if i = Array.length subterms then acc
-      else
-        let acc = fold f acc subterms.(i) (Path.at_index i path) in
-        fold_subterms f acc subterms path (i + 1)
-
-    let fold f acc term = fold f acc term Path.root
+    (* Precondition: input is a [Var] *)
+    let rec get_repr (var : t) =
+      match !var with
+      | Var (_, repr) -> (
+          match !repr with IVar | Prim _ -> var | Var (_, _) -> get_repr repr)
+      | IVar | Prim _ -> assert false
 
     let ivars term =
       let rec loop term acc =
@@ -107,24 +129,30 @@ struct
     let vars_upper_bound term =
       let rec loop term acc =
         match !term with
-        | Var v -> Int.max v acc
+        | Var (v, _) -> Int.max v acc
         | Prim (_, subterms) ->
             Array.fold_left (fun acc term -> loop term acc) acc subterms
         | IVar -> acc
       in
       loop term 0
 
-    let rec of_term : T.t -> t =
-     fun term ->
+    let rec of_term : var_table -> T.t -> t =
+     fun table term ->
       match term.Hashcons.node with
-      | Term.Var v -> var v
+      | Term.Var v -> (
+          match Hashtbl.find_opt table v with
+          | None ->
+              let desc_ptr = ref IVar in
+              Hashtbl.add table v desc_ptr ;
+              ref (Var (v, desc_ptr))
+          | Some desc_ptr -> ref (Var (v, desc_ptr)))
       | Term.Prim (p, subtrees, _) ->
-          let subtrees = Array.map of_term subtrees in
+          let subtrees = Array.map (fun t -> of_term table t) subtrees in
           prim p subtrees
 
     let to_term : t -> T.t =
      fun term ->
-      let next =
+      let _next =
         let c = Stdlib.ref (vars_upper_bound term) in
         fun () ->
           incr c ;
@@ -132,33 +160,13 @@ struct
       in
       let rec to_term term =
         match !term with
-        | Var v -> T.var v
+        | Var (v, _) -> T.var v
         | Prim (p, subtrees) ->
             let subtrees = Array.map to_term subtrees in
             T.prim p subtrees
-        | IVar ->
-            let v = next () in
-            term := Var v ;
-            T.var v
+        | IVar -> assert false
       in
       to_term term
-
-    let rec get_subterm_fwd : t -> Path.forward -> t =
-     fun term path ->
-      match path with
-      | [] -> term
-      | index :: l -> (
-          match !term with
-          | Prim (_, subterms) ->
-              let len = Array.length subterms in
-              if index >= len then raise (Term.Get_subterm_oob (path, len))
-              else get_subterm_fwd subterms.(index) l
-          | Var _ -> raise (Term.Get_subterm_oob (path, 0))
-          | IVar -> assert false)
-  end
-
-  module _ : Intf.Term_core with type prim = P.t = struct
-    include Internal_term
   end
 
   type iref = Internal_term.t
@@ -171,7 +179,12 @@ struct
       mutable data : 'a option
     }
 
-  type 'a t = { nodes : 'a node Vec.vector; root : Internal_term.t }
+  type 'a t =
+    { nodes : 'a node Vec.vector;
+      root : Internal_term.t;
+      var_table : Internal_term.var_table
+          (** A table used during lookup operations *)
+    }
 
   let box_of_data pp_data data =
     let open PrintBox in
@@ -186,7 +199,7 @@ struct
          ~bars:true
          (List.map
             (fun (v, t) ->
-              hlist [Internal_term.to_tree v; Internal_term.to_tree t])
+              hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
             subst)
 
   let box_of_subst_with_data pp_data subst data =
@@ -197,7 +210,7 @@ struct
              ~bars:true
              (List.map
                 (fun (v, t) ->
-                  hlist [Internal_term.to_tree v; Internal_term.to_tree t])
+                  hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
                 subst);
            box_of_data pp_data data ]
 
@@ -221,6 +234,8 @@ struct
 
   let pp pp_data fmtr tree =
     PrintBox_text.pp fmtr (box_of_subtrees pp_data tree.nodes)
+
+  let of_term index term = Internal_term.of_term index.var_table term
 
   let subst_is_empty = List.is_empty
 
@@ -259,7 +274,7 @@ struct
           in
           (residual_subst, residual_node)
         else generalize subst_term node_term residual_subst residual_node
-    | (Var v1, Var v2) ->
+    | (Var (v1, _), Var (v2, _)) ->
         if Int.equal v1 v2 then (residual_subst, residual_node)
         else generalize subst_term node_term residual_subst residual_node
     | (Var _, Prim _) | (Prim _, Var _) ->
@@ -273,12 +288,16 @@ struct
   let top_symbol_disagree (t1 : Internal_term.t) (t2 : Internal_term.t) =
     match (!t1, !t2) with
     | (Prim (prim1, _), Prim (prim2, _)) -> not (P.equal prim1 prim2)
-    | (Var v1, Var v2) -> not (Int.equal v1 v2)
+    | (Var (v1, _), Var (v2, _)) -> not (Int.equal v1 v2)
     | (Prim _, Var _) | (Var _, Prim _) -> true
     | (IVar, IVar) -> assert false
     | _ -> false
 
-  let create () = { nodes = Vec.create (); root = ref Internal_term.IVar }
+  let create () =
+    { nodes = Vec.create ();
+      root = ref Internal_term.IVar;
+      var_table = Hashtbl.create 11
+    }
 
   let non_trivial subst =
     not (List.exists (fun (_v, t) -> Internal_term.is_ivar t) subst)
@@ -463,6 +482,8 @@ struct
     insert_aux [(tree.root, term)] tree.nodes 0
 
   module Stats = struct
+    [@@@ocaml.warning "-32"]
+
     let rec max_depth_node node =
       1
       + Vec.fold (fun acc node -> max acc (max_depth_node node)) 0 node.subtrees
@@ -529,7 +550,7 @@ struct
   (* ; Internal_for_tests.check_invariants index |> ignore *)
 
   let insert term data tree =
-    update (Internal_term.of_term term) (fun _ -> data) tree
+    update (Internal_term.of_term tree.var_table term) (fun _ -> data) tree
 
   let rec iter_node f node (root : Internal_term.t) =
     let subst = node.head in
@@ -541,5 +562,99 @@ struct
   let iter f (index : 'a t) =
     Vec.iter (fun node -> iter_node f node index.root) index.nodes
 
-  let copy = Internal_term.copy
+  let rec unify uf_state (term1 : Internal_term.t) (term2 : Internal_term.t) =
+    match (!term1, !term2) with
+    | (Prim (prim1, args1), Prim (prim2, args2)) ->
+        if P.equal prim1 prim2 then unify_arrays uf_state args1 args2 0
+        else (uf_state, false)
+    | (Var (_, repr_ptr1), Var (_, repr_ptr2)) -> (
+        if repr_ptr1 == repr_ptr2 then (uf_state, true)
+        else
+          (* term1, term2 are [Var], hence precondition of [get_repr] is satisfied *)
+          (* TODO: get_repr: could return [repr] _and_ [root] to avoid destructuring *)
+          let repr1 = Internal_term.get_repr term1 in
+          let repr2 = Internal_term.get_repr term2 in
+          (* invariant: repr1, repr2 are Var pointing to Prim or IVar *)
+          match (!repr1, !repr2) with
+          | (Var (_, root1), Var (_, root2)) -> (
+              match (!root1, !root2) with
+              | (Prim _, Prim _) -> unify uf_state root1 root2
+              | (Prim _, IVar) ->
+                  (* let term2 point to term1 *)
+                  root2 := !repr1 ;
+                  ((root2, Internal_term.IVar) :: uf_state, true)
+              | (IVar, Prim _) ->
+                  (* let term1 point to term2 *)
+                  root1 := !repr2 ;
+                  ((root1, IVar) :: uf_state, true)
+              | (IVar, IVar) ->
+                  root1 := !repr2 ;
+                  ((root1, IVar) :: uf_state, true)
+              | _ ->
+                  (* Impossible case *)
+                  assert false)
+          | _ ->
+              (* Impossible case *)
+              assert false)
+    | (Var (_, _), Prim _) -> (
+        let repr = Internal_term.get_repr term1 in
+        match !repr with
+        | Var (_, root) -> (
+            match !root with
+            | IVar ->
+                root := !term2 ;
+                ((root, IVar) :: uf_state, true)
+            | Prim _ -> unify uf_state root term2
+            | Var _ ->
+                (* Impossible case *)
+                assert false)
+        | _ ->
+            (* Impossible case *)
+            assert false)
+    | (Prim _, Var (_, _)) -> (
+        let repr = Internal_term.get_repr term2 in
+        match !repr with
+        | Var (_, root) -> (
+            match !root with
+            | IVar ->
+                root := !term1 ;
+                ((root, IVar) :: uf_state, true)
+            | Prim _ -> unify uf_state term1 root
+            | Var _ ->
+                (* Impossible case *)
+                assert false)
+        | _ ->
+            (* Impossible case *)
+            assert false)
+    | (IVar, _) -> assert false
+    | (((Prim _ | Var _) as desc1), IVar) ->
+        term2 := desc1 ;
+        ((term2, desc1) :: uf_state, true)
+
+  and unify_arrays uf_state args1 args2 i =
+    if i = Array.length args1 then (uf_state, true)
+    else
+      let (uf_state, success) = unify uf_state args1.(i) args2.(i) in
+      if success then unify_arrays uf_state args1 args2 (i + 1)
+      else (uf_state, false)
+
+  let rec unification uf_state subst =
+    match subst with
+    | [] -> (uf_state, true)
+    | (v, t) :: rest ->
+        let (uf_state, success) = unify uf_state v t in
+        if success then unification uf_state rest else (uf_state, false)
+
+  let rec iter_unifiable_node f node root _uf_state =
+    let (uf_state', uf_success) = unification [] node.head in
+    if uf_success then (
+      (match node.data with None -> () | Some data -> f root data) ;
+      Vec.iter (fun node -> iter_unifiable_node f node root []) node.subtrees)
+    else () ;
+    List.iter (fun (v, d) -> v := d) uf_state'
+
+  let iter_unifiable f (index : 'a t) (query : Internal_term.t) =
+    index.root := !query ;
+    Vec.iter (fun node -> iter_unifiable_node f node index.root []) index.nodes ;
+    index.root := IVar
 end
