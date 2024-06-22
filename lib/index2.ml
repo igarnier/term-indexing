@@ -35,7 +35,20 @@ module type S = sig
   end
 end
 
-module IRef = struct
+(* References equipped with unique integers for debugging/printing purposes *)
+module IRef : sig
+  type 'a ref
+
+  val ref : 'a -> 'a ref
+
+  val ( ! ) : 'a ref -> 'a
+
+  val ( := ) : 'a ref -> 'a -> unit
+
+  val pp_ref : 'a Fmt.t -> 'a ref Fmt.t
+
+  val uid : 'a ref -> int
+end = struct
   type 'a ref = { mutable contents : 'a; uid : int }
 
   let fresh : unit -> int =
@@ -51,7 +64,10 @@ module IRef = struct
 
   let ( := ) r x = r.contents <- x
 
-  let pp_ref pp_data fmtr r = Format.fprintf fmtr "%d=%a" pp_data r.contents
+  let pp_ref pp_data fmtr r =
+    Format.fprintf fmtr "%d=%a" r.uid pp_data r.contents
+
+  let uid r = r.uid
 end
 
 module Make
@@ -70,7 +86,7 @@ module Make
       | Var of var * t
           (** External (user-inserted) variables. Contains a pointer
               to a representative term to be used during unification.
-              A variable which is unset points to [IVar].
+              A free variable if and only if it points to [IVar].
           *)
       | IVar  (** Internal variables, used to implement sharing in the tree. *)
 
@@ -79,24 +95,18 @@ module Make
     type var_table = (int, t) Hashtbl.t
 
     module Pp = struct
-      let pp_uid_opt fmtr = function
-        | None -> ()
-        | Some uid -> Format.fprintf fmtr "%d:" uid
-
-      let rec desc_to_tree : ?uid:int -> desc -> PrintBox.t =
-       fun ?uid desc ->
-        match desc with
+      let rec to_tree : t -> PrintBox.t =
+       fun term ->
+        match !term with
         | Prim (prim, subtrees) ->
             PrintBox.tree
-              (PrintBox.text (Format.asprintf "%a%a" pp_uid_opt uid P.pp prim))
+              (PrintBox.text (Format.asprintf "%a" P.pp prim))
               (Array.to_list (Array.map to_tree subtrees))
         | Var (v, repr) ->
             PrintBox.tree
-              (PrintBox.text (Format.asprintf "%aV(%d)" pp_uid_opt uid v))
+              (PrintBox.text (Format.asprintf "V(%d)" v))
               [to_tree repr]
-        | IVar -> PrintBox.asprintf "%aivar" pp_uid_opt uid
-
-      and to_tree term = desc_to_tree ~uid:term.uid !term
+        | IVar -> PrintBox.asprintf "ivar"
 
       let pp fmtr term =
         let tree = to_tree term in
@@ -126,16 +136,6 @@ module Make
       in
       loop term []
 
-    let vars_upper_bound term =
-      let rec loop term acc =
-        match !term with
-        | Var (v, _) -> Int.max v acc
-        | Prim (_, subterms) ->
-            Array.fold_left (fun acc term -> loop term acc) acc subterms
-        | IVar -> acc
-      in
-      loop term 0
-
     let rec of_term : var_table -> T.t -> t =
      fun table term ->
       match term.Hashcons.node with
@@ -150,23 +150,14 @@ module Make
           let subtrees = Array.map (fun t -> of_term table t) subtrees in
           prim p subtrees
 
-    let to_term : t -> T.t =
+    let rec to_term : t -> T.t =
      fun term ->
-      let _next =
-        let c = Stdlib.ref (vars_upper_bound term) in
-        fun () ->
-          incr c ;
-          c.contents
-      in
-      let rec to_term term =
-        match !term with
-        | Var (v, _) -> T.var v
-        | Prim (p, subtrees) ->
-            let subtrees = Array.map to_term subtrees in
-            T.prim p subtrees
-        | IVar -> assert false
-      in
-      to_term term
+      match !term with
+      | Var (v, _) -> T.var v
+      | Prim (p, subtrees) ->
+          let subtrees = Array.map to_term subtrees in
+          T.prim p subtrees
+      | IVar -> failwith "to_term: encountered an internal variable"
   end
 
   type iref = Internal_term.t
@@ -180,60 +171,69 @@ module Make
     }
 
   type 'a t =
-    { nodes : 'a node Vec.vector;
+    { nodes : 'a node Vec.vector;  (** [nodes]  *)
       root : Internal_term.t;
+          (** [root] is set to [IVar] outside of insertion or lookup operations.
+              It is set to the term being inserted or the query term otherwise. *)
       var_table : Internal_term.var_table
           (** A table used during lookup operations *)
     }
 
-  let box_of_data pp_data data =
-    let open PrintBox in
-    match data with
-    | None -> text "<>"
-    | Some data -> text (Format.asprintf "%a" pp_data data)
+  module Pp = struct
+    let box_of_data pp_data data =
+      let open PrintBox in
+      match data with
+      | None -> text "<>"
+      | Some data -> text (Format.asprintf "%a" pp_data data)
 
-  let box_of_subst subst =
-    let open PrintBox in
-    frame
-    @@ vlist
-         ~bars:true
-         (List.map
-            (fun (v, t) ->
-              hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
-            subst)
+    let box_of_subst subst =
+      let open PrintBox in
+      frame
+      @@ vlist
+           ~bars:true
+           (List.map
+              (fun (v, t) ->
+                hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
+              subst)
 
-  let box_of_subst_with_data pp_data subst data =
-    let open PrintBox in
-    frame
-    @@ hlist
-         [ vlist
-             ~bars:true
-             (List.map
-                (fun (v, t) ->
-                  hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
-                subst);
-           box_of_data pp_data data ]
+    let box_of_subst_with_data pp_data subst data =
+      let open PrintBox in
+      frame
+      @@ hlist
+           [ vlist
+               ~bars:true
+               (List.map
+                  (fun (v, t) ->
+                    hlist
+                      [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
+                  subst);
+             box_of_data pp_data data ]
 
-  let pp_subst fmtr subst = PrintBox_text.pp fmtr (box_of_subst subst)
+    let pp_subst fmtr subst = PrintBox_text.pp fmtr (box_of_subst subst)
 
-  let rec to_box pp_data node =
-    let open PrintBox in
-    tree
-      ~indent:4
-      (hlist
-         [ box_of_subst_with_data pp_data node.head node.data;
-           text (string_of_int (Vec.length node.subtrees)) ])
-      (List.map (to_box pp_data) (Vec.to_list node.subtrees))
+    let rec to_box pp_data node =
+      let open PrintBox in
+      tree
+        ~indent:4
+        (hlist
+           [ box_of_subst_with_data pp_data node.head node.data;
+             text (string_of_int (Vec.length node.subtrees)) ])
+        (List.map (to_box pp_data) (Vec.to_list node.subtrees))
 
-  and box_of_subtrees pp_data vec =
-    let open PrintBox in
-    align
-      ~h:`Center
-      ~v:`Center
-      (hlist (List.map (to_box pp_data) (Vec.to_list vec)))
+    and box_of_subtrees pp_data vec =
+      let open PrintBox in
+      align
+        ~h:`Center
+        ~v:`Center
+        (hlist (List.map (to_box pp_data) (Vec.to_list vec)))
 
-  let pp pp_data fmtr tree =
-    PrintBox_text.pp fmtr (box_of_subtrees pp_data tree.nodes)
+    let pp pp_data fmtr tree =
+      PrintBox_text.pp fmtr (box_of_subtrees pp_data tree.nodes)
+  end
+
+  let pp = Pp.pp
+
+  let pp_subst = Pp.pp_subst
 
   let of_term index term = Internal_term.of_term index.var_table term
 
@@ -523,8 +523,8 @@ module Make
       match subst with
       | [] -> Int_set.union acc in_scope
       | (v, t) :: rest ->
-          let t_ivars = Internal_term.ivars t |> List.map (fun r -> r.uid) in
-          if not (Int_set.mem v.uid in_scope) then
+          let t_ivars = Internal_term.ivars t |> List.map (fun r -> uid r) in
+          if not (Int_set.mem (uid v) in_scope) then
             raise (Not_well_scoped (v, in_scope))
           else
             let acc = Int_set.union acc (Int_set.of_list t_ivars) in
@@ -537,7 +537,7 @@ module Make
       Vec.iter (fun node -> well_scoped_node node in_scope) node.subtrees
 
     let well_scoped index =
-      let in_scope = Int_set.singleton index.root.uid in
+      let in_scope = Int_set.singleton (uid index.root) in
       Vec.iter (fun node -> well_scoped_node node in_scope) index.nodes
 
     let check_invariants index =
