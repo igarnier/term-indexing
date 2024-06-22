@@ -19,37 +19,42 @@ module type S = sig
 
   val pp : 'a Fmt.t -> 'a t Fmt.t
 
-  val of_term : 'a t -> term -> Internal_term.t
-
   val create : unit -> 'a t
 
   val insert : term -> 'a -> 'a t -> unit
 
   val iter : (Internal_term.t -> 'a -> unit) -> 'a t -> unit
 
+  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query]. *)
   val iter_unifiable :
     (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
 
+  (** [iter_generalize f index query] applies [f] on all terms generalizing [query]. *)
+  val iter_generalize :
+    (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
+
   module Internal_for_tests : sig
+    val of_term : 'a t -> term -> Internal_term.t
+
     val check_invariants : 'a t -> bool
   end
 end
 
 (* References equipped with unique integers for debugging/printing purposes *)
 module IRef : sig
-  type 'a ref
+  type 'a iref
 
-  val ref : 'a -> 'a ref
+  val ref : 'a -> 'a iref
 
-  val ( ! ) : 'a ref -> 'a
+  val ( ! ) : 'a iref -> 'a
 
-  val ( := ) : 'a ref -> 'a -> unit
+  val ( := ) : 'a iref -> 'a -> unit
 
-  val pp_ref : 'a Fmt.t -> 'a ref Fmt.t
+  val pp_ref : 'a Fmt.t -> 'a iref Fmt.t
 
-  val uid : 'a ref -> int
+  val uid : 'a iref -> int
 end = struct
-  type 'a ref = { mutable contents : 'a; uid : int }
+  type 'a iref = { mutable contents : 'a; uid : int }
 
   let fresh : unit -> int =
     let counter = ref 0 in
@@ -86,11 +91,10 @@ module Make
       | Var of var * t
           (** External (user-inserted) variables. Contains a pointer
               to a representative term to be used during unification.
-              A free variable if and only if it points to [IVar].
-          *)
+              A free variable if and only if it points to [IVar]. *)
       | IVar  (** Internal variables, used to implement sharing in the tree. *)
 
-    and t = desc ref
+    and t = desc iref
 
     type var_table = (int, t) Hashtbl.t
 
@@ -100,13 +104,13 @@ module Make
         match !term with
         | Prim (prim, subtrees) ->
             PrintBox.tree
-              (PrintBox.text (Format.asprintf "%a" P.pp prim))
+              (PrintBox.text (Format.asprintf "%d:%a" (uid term) P.pp prim))
               (Array.to_list (Array.map to_tree subtrees))
         | Var (v, repr) ->
             PrintBox.tree
-              (PrintBox.text (Format.asprintf "V(%d)" v))
+              (PrintBox.text (Format.asprintf "%d:V(%d)" (uid term) v))
               [to_tree repr]
-        | IVar -> PrintBox.asprintf "ivar"
+        | IVar -> PrintBox.asprintf "%d:ivar" (uid term)
 
       let pp fmtr term =
         let tree = to_tree term in
@@ -171,7 +175,7 @@ module Make
     }
 
   type 'a t =
-    { nodes : 'a node Vec.vector;  (** [nodes]  *)
+    { nodes : 'a node Vec.vector;  (** [nodes] is the first layer of trees *)
       root : Internal_term.t;
           (** [root] is set to [IVar] outside of insertion or lookup operations.
               It is set to the term being inserted or the query term otherwise. *)
@@ -298,9 +302,6 @@ module Make
       root = ref Internal_term.IVar;
       var_table = Hashtbl.create 11
     }
-
-  let non_trivial subst =
-    not (List.exists (fun (_v, t) -> Internal_term.is_ivar t) subst)
 
   let reset subst = List.iter (fun (v, _) -> v := Internal_term.IVar) subst
 
@@ -519,6 +520,9 @@ module Make
 
     let all_unset (index : 'a t) : bool = Vec.for_all all_unset_node index.nodes
 
+    let non_trivial subst =
+      not (List.exists (fun (_v, t) -> Internal_term.is_ivar t) subst)
+
     let rec well_scoped_subst subst in_scope acc =
       match subst with
       | [] -> Int_set.union acc in_scope
@@ -544,6 +548,8 @@ module Make
       well_scoped index ;
       if not (all_unset index) then raise Not_properly_unset ;
       true
+
+    let of_term = of_term
   end
 
   let update term f index = update_subst term f index
@@ -626,10 +632,18 @@ module Make
         | _ ->
             (* Impossible case *)
             assert false)
-    | (IVar, _) -> assert false
+    | (IVar, ((Prim _ | Var _) as desc2)) ->
+        term1 := desc2 ;
+        ((term1, Internal_term.IVar) :: uf_state, true)
+    | (IVar, IVar) ->
+        (* The value of the variable does not matter. *)
+        let fresh = Internal_term.(Var (-1, ref IVar)) in
+        term1 := fresh ;
+        term2 := fresh ;
+        ((term1, IVar) :: (term2, IVar) :: uf_state, true)
     | (((Prim _ | Var _) as desc1), IVar) ->
         term2 := desc1 ;
-        ((term2, desc1) :: uf_state, true)
+        ((term2, IVar) :: uf_state, true)
 
   and unify_arrays uf_state args1 args2 i =
     if i = Array.length args1 then (uf_state, true)
@@ -638,15 +652,15 @@ module Make
       if success then unify_arrays uf_state args1 args2 (i + 1)
       else (uf_state, false)
 
-  let rec unification uf_state subst =
+  let rec unification_subst uf_state subst =
     match subst with
     | [] -> (uf_state, true)
     | (v, t) :: rest ->
         let (uf_state, success) = unify uf_state v t in
-        if success then unification uf_state rest else (uf_state, false)
+        if success then unification_subst uf_state rest else (uf_state, false)
 
   let rec iter_unifiable_node f node root =
-    let (uf_state', uf_success) = unification [] node.head in
+    let (uf_state', uf_success) = unification_subst [] node.head in
     if uf_success then (
       (match node.data with None -> () | Some data -> f root data) ;
       Vec.iter (fun node -> iter_unifiable_node f node root) node.subtrees)
@@ -656,5 +670,89 @@ module Make
   let iter_unifiable f (index : 'a t) (query : Internal_term.t) =
     index.root := !query ;
     Vec.iter (fun node -> iter_unifiable_node f node index.root) index.nodes ;
+    index.root := IVar
+
+  let rec check_generalize undo_stack (term1 : Internal_term.t)
+      (term2 : Internal_term.t) =
+    Format.printf
+      "check_generalize: %a vs %a@."
+      Internal_term.pp
+      term1
+      Internal_term.pp
+      term2 ;
+    match (!term1, !term2) with
+    | (Prim (prim1, args1), Prim (prim2, args2)) ->
+        if P.equal prim1 prim2 then
+          check_generalize_arrays undo_stack args1 args2 0
+        else (undo_stack, false)
+    | (Var (_, repr1), Var (_, repr2)) -> (
+        match !repr1 with
+        | IVar ->
+            (* Variable not instantiated; instantiate it with term2. *)
+            repr1 := !term2 ;
+            ((repr1, Internal_term.IVar) :: undo_stack, true)
+        | Prim _ ->
+            (* Variable already instantiated with a prim, cannot generalize
+               to another variable. *)
+            (undo_stack, false)
+        | Var (_, repr1') ->
+            (* Variable was was already mapped to a term variable, check equality. *)
+            (undo_stack, repr1' == repr2))
+    | (Var (_, repr), Prim _) -> (
+        match !repr with
+        | IVar ->
+            (* Variable not instantiated; instantiate it with term2. *)
+            repr := !term2 ;
+            ((repr, Internal_term.IVar) :: undo_stack, true)
+        | Prim _ ->
+            (* Variable was already instantiated with a prim, check
+               that instances properly generalize. Note that [repr] is not
+               a query term and may contain [IVar] and [Var] nodes. *)
+            check_generalize undo_stack repr term2
+        | Var _ ->
+            (* Variable was was already mapped to a term variable *)
+            (undo_stack, false))
+    | (Prim _, Var (_, _)) -> (undo_stack, false)
+    | (IVar, ((Prim _ | Var _) as desc2)) ->
+        term1 := desc2 ;
+        ((term1, IVar) :: undo_stack, true)
+    | (IVar, IVar) ->
+        (* The value of the variable does not matter. *)
+        let fresh = Internal_term.(Var (-1, ref IVar)) in
+        term1 := fresh ;
+        term2 := fresh ;
+        ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
+    | (((Prim _ | Var _) as desc1), IVar) ->
+        term2 := desc1 ;
+        ((term2, IVar) :: undo_stack, true)
+
+  and check_generalize_arrays undo_stack args1 args2 i =
+    if i = Array.length args1 then (undo_stack, true)
+    else
+      let (undo_stack, success) =
+        check_generalize undo_stack args1.(i) args2.(i)
+      in
+      if success then check_generalize_arrays undo_stack args1 args2 (i + 1)
+      else (undo_stack, false)
+
+  let rec check_generalize_subst undo_stack subst =
+    match subst with
+    | [] -> (undo_stack, true)
+    | (v, t) :: rest ->
+        let (undo_stack, success) = check_generalize undo_stack v t in
+        if success then check_generalize_subst undo_stack rest
+        else (undo_stack, false)
+
+  let rec iter_generalize_node f node root =
+    let (undo_stack, uf_success) = check_generalize_subst [] node.head in
+    if uf_success then (
+      (match node.data with None -> () | Some data -> f root data) ;
+      Vec.iter (fun node -> iter_generalize_node f node root) node.subtrees)
+    else () ;
+    List.iter (fun (v, d) -> v := d) undo_stack
+
+  let iter_generalize f (index : 'a t) (query : Internal_term.t) =
+    index.root := !query ;
+    Vec.iter (fun node -> iter_generalize_node f node index.root) index.nodes ;
     index.root := IVar
 end

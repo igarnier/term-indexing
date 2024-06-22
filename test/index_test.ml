@@ -166,7 +166,7 @@ module Mscg_tests = struct
           (neg (var (Index.Internal_for_tests.indicator 5))))
 end
 
-module Make_shared_test (Index : sig
+module type Index_signature = sig
   type 'a t
 
   type term = Arith.Expr.t
@@ -188,8 +188,9 @@ module Make_shared_test (Index : sig
 
     val pp_error : Format.formatter -> exn -> unit
   end
-end) =
-struct
+end
+
+module Make_shared_test (Index : Index_signature) = struct
   let named s = Index.name ^ "-" ^ s
 
   let subst_tree_insert_terms =
