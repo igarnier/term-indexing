@@ -36,8 +36,99 @@ end
 
 module Expr = Term.Make_hash_consed (Prim) (Var_map)
 module Subst_mod = Subst.Make (Prim) (Var_map) (Expr)
-module Index = Index.Make (Prim) (Var_map) (Expr) (Subst_mod)
-module Index2 = Index2.Make (Prim) (Expr)
+
+(* ---------------------------------------- *)
+
+(* Unifying signature for all term index implementations *)
+module type Index_signature = sig
+  type 'a t
+
+  type term = Expr.t
+
+  val create : unit -> 'a t
+
+  val insert : term -> 'a -> 'a t -> unit
+
+  val iter : (term -> 'a -> unit) -> 'a t -> unit
+
+  val iter_unifiable : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  val iter_generalize : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  val iter_specialize : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  val pp : 'a Fmt.t -> 'a t Fmt.t
+
+  module Internal_for_tests : sig
+    val check_invariants : 'a t -> bool
+  end
+end
+
+module Index_raw = Index.Make (Prim) (Var_map) (Expr) (Subst_mod)
+
+module Index : Index_signature = struct
+  include Index_raw
+
+  let insert f data index = ignore (insert f data index)
+
+  let iter_unifiable f index query = iter_unifiable f index query
+
+  let iter_generalize f index query = iter_generalize f index query
+
+  let iter_specialize f index query = iter_specialize f index query
+end
+
+module Index2_raw = Index2.Make (Prim) (Expr)
+
+module Make_index2 (X : sig
+  val expand_variables : bool
+end) : Index_signature = struct
+  open X
+  include Index2_raw
+
+  type term = Expr.t
+
+  let iter f index =
+    iter
+      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
+      index
+
+  let iter_unifiable f index query =
+    iter_unifiable
+      (fun iterm data ->
+        (* if Internal_term.is_cyclic iterm then () *)
+        (* else *)
+        let () = Format.printf "iter_unifiable: %a@." Internal_term.pp iterm in
+        f (Internal_term.to_term ~expand_variables iterm) data)
+      index
+      (Internal_for_tests.of_term index query)
+
+  let iter_generalize f index query =
+    iter_generalize
+      (fun iterm data ->
+        (* if Internal_term.is_cyclic iterm then () *)
+        (* else *)
+        f (Internal_term.to_term ~expand_variables iterm) data)
+      index
+      (Internal_for_tests.of_term index query)
+
+  let iter_specialize f index query =
+    iter_specialize
+      (fun iterm data ->
+        (* if Internal_term.is_cyclic iterm then () *)
+        (* else *)
+        f (Internal_term.to_term ~expand_variables iterm) data)
+      index
+      (Internal_for_tests.of_term index query)
+
+  let insert f data index = ignore (insert f data index)
+end
+
+module Index2 = Make_index2 (struct
+  let expand_variables = false
+end)
+
+module Reference = Naive_index.Make (Prim) (Expr) (Subst_mod)
 module Subst = Subst_mod
 
 let add x y = Expr.prim Add [| x; y |]
@@ -61,20 +152,16 @@ let mkgen () =
     c := !c + 1 ;
     v
 
+let canon t = Expr.canon t (mkgen ()) |> snd
+
 let alpha_eq t1 t2 =
-  let (_, t1) = Expr.canon t1 (mkgen ()) in
-  let (_, t2) = Expr.canon t2 (mkgen ()) in
+  let t1 = canon t1 in
+  let t2 = canon t2 in
   Expr.equal t1 t2
 
 let alpha_eq_list l1 l2 =
-  let l1 =
-    List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l1
-    |> List.sort Expr.compare
-  in
-  let l2 =
-    List.map (fun t -> Expr.canon t (mkgen ()) |> snd) l2
-    |> List.sort Expr.compare
-  in
+  let l1 = List.map canon l1 |> List.sort Expr.compare in
+  let l2 = List.map canon l2 |> List.sort Expr.compare in
   List.equal Expr.equal l1 l2
 
 (* ---------------------------------------- *)
@@ -87,6 +174,7 @@ type native =
   | Neg of native
   | Var of int
   | Const of float
+  | Cycle of int
 
 let rec pp_native fmtr (term : native) =
   match term with
@@ -95,8 +183,9 @@ let rec pp_native fmtr (term : native) =
   | Mul (l, r) -> Format.fprintf fmtr "@[(%a * %a)@]" pp_native l pp_native r
   | Div (l, r) -> Format.fprintf fmtr "@[(%a / %a)@]" pp_native l pp_native r
   | Neg e -> Format.fprintf fmtr "@[-%a@]" pp_native e
-  | Var v -> Format.fprintf fmtr "@[%d@]" v
+  | Var v -> Format.fprintf fmtr "@[v(%d)@]" v
   | Const f -> Format.fprintf fmtr "@[%f@]" f
+  | Cycle i -> Format.fprintf fmtr "@[cy(%d)@]" i
 
 (* -------------------- *)
 
@@ -163,7 +252,7 @@ let term_gen canonical_var : Expr.t Gen.t =
                   if Path.equal path Path.root then float_ else try_var path
                 else
                   small_nat >>= fun i ->
-                  return (var (Index.Internal_for_tests.index i)))
+                  return (var (Index_raw.Internal_for_tests.index i)))
         | `Float -> float_)
     (Path.root, 5)
 
@@ -171,7 +260,7 @@ let term_gen canonical_var : Expr.t Gen.t =
 let gen =
   term_gen (fun path ->
       let hash = Path.hash path in
-      Some (Index.Internal_for_tests.indicator (hash mod 100)))
+      Some (Index_raw.Internal_for_tests.indicator (hash mod 100)))
 
 let memoize_enum : int -> Path.t -> int option =
  fun upper_bound ->
@@ -184,9 +273,9 @@ let memoize_enum : int -> Path.t -> int option =
       | None ->
           let next = !c in
           incr c ;
-          let indic = Index.Internal_for_tests.indicator next in
+          let indic = Index_raw.Internal_for_tests.indicator next in
           Hashtbl.add table path indic ;
-          assert (indic < Index.Internal_for_tests.indicator upper_bound) ;
+          assert (indic < Index_raw.Internal_for_tests.indicator upper_bound) ;
           Some indic
       | Some _ as res -> res
 
@@ -207,7 +296,7 @@ let subst_gen : Subst.t Gen.t =
   let make_domain count = List.init count Fun.id in
   let domain_gen = Gen.map make_domain var_count in
   let term_gen i =
-    let indicator = Index.Internal_for_tests.indicator i in
+    let indicator = Index_raw.Internal_for_tests.indicator i in
     pair (return indicator) (term_gen (memoize_enum i))
   in
   Gen.bind domain_gen @@ fun list ->

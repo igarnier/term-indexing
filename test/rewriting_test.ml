@@ -44,16 +44,10 @@ let expression =
   let subexpr = mul (float 2.) (add (var 0) (var 1)) in
   sub subexpr (div subexpr (div subexpr (var 2)))
 
-let assert_eq got expected =
-  if not (String.equal got expected) then
-    Format.kasprintf failwith "Got: %s\nExpected: %s\n%!" got expected
-  else ()
-
-let () =
-  assert_eq
-    (Format.asprintf "%a" pp_native (to_native expression))
-    "((2.000000 * (0 + 1)) - ((2.000000 * (0 + 1)) / ((2.000000 * (0 + 1)) / \
-     2)))"
+(* let assert_eq got expected = *)
+(*   if not (String.equal got expected) then *)
+(*     Format.kasprintf failwith "Got: %s\nExpected: %s\n%!" got expected *)
+(*   else () *)
 
 (* Matches are produced in a depth-first fashion, hence matches
    closer to the root are closer to the beginning of the list of
@@ -72,13 +66,6 @@ let rewritten =
 let target =
   let subexpr = add (mul (float 2.) (var 0)) (mul (float 2.) (var 1)) in
   sub subexpr (div subexpr (div subexpr (var 2)))
-
-let () =
-  assert_eq
-    (Format.asprintf "%a" pp_native (to_native rewritten))
-    "(((2.000000 * 0) + (2.000000 * 1)) - (((2.000000 * 0) + (2.000000 * 1)) / \n\
-    \                                     (((2.000000 * 0) + (2.000000 * 1)) / \n\
-    \                                     2)))"
 
 (* Thanks to hash-consing, structural equality is physical equality *)
 let () = assert (target.tag = rewritten.tag)

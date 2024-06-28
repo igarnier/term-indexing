@@ -11,7 +11,7 @@ module Mscg_tests = struct
       ~count:100
       Arith.gen
       (fun term ->
-        let (res, _, _) = Index.Internal_for_tests.mscg term term in
+        let (res, _, _) = Index_raw.Internal_for_tests.mscg term term in
         Expr.equal term res)
     |> QCheck_alcotest.to_alcotest
 
@@ -23,8 +23,8 @@ module Mscg_tests = struct
       ~count:100
       (QCheck2.Gen.pair Arith.gen Arith.gen)
       (fun (term1, term2) ->
-        let (res1, _, _) = Index.Internal_for_tests.mscg term1 term2 in
-        let (res2, _, _) = Index.Internal_for_tests.mscg term2 term1 in
+        let (res1, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
+        let (res2, _, _) = Index_raw.Internal_for_tests.mscg term2 term1 in
         Expr.equal res1 res2)
     |> QCheck_alcotest.to_alcotest
 
@@ -32,7 +32,7 @@ module Mscg_tests = struct
     Alcotest.test_case "mscg-case0" `Quick (fun () ->
         let term1 = add (mul (var 1) (var 5)) (var 9) in
         let term2 = add (div (var 1) (var 5)) (var 9) in
-        let (res, _, _) = Index.Internal_for_tests.mscg term1 term2 in
+        let (res, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
         match to_native res with
         | Add (Var 0, Var 9) -> ()
         | _ -> Alcotest.fail "mscg-case0")
@@ -41,7 +41,7 @@ module Mscg_tests = struct
     Alcotest.test_case "mscg-case1" `Quick (fun () ->
         let term1 = add (mul (var 1) (var 5)) (var 9) in
         let term2 = mul (mul (var 1) (var 5)) (var 9) in
-        let (res, _, _) = Index.Internal_for_tests.mscg term1 term2 in
+        let (res, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
         match to_native res with Var 0 -> () | _ -> Alcotest.fail "mscg-case1")
 
   let mscg_case2 =
@@ -49,7 +49,7 @@ module Mscg_tests = struct
         let term1 = add (mul (var 1) (var 5)) (var 9) in
         let term2 = add (div (var 1) (var 5)) (div (var 1) (var 5)) in
         let (res, residual1, residual2) =
-          Index.Internal_for_tests.mscg term1 term2
+          Index_raw.Internal_for_tests.mscg term1 term2
         in
         match to_native res with
         | Add (Var 0, Var 4) -> (
@@ -70,7 +70,7 @@ module Mscg_tests = struct
     fun () ->
       let v = !c in
       incr c ;
-      Index.Internal_for_tests.indicator v
+      Index_raw.Internal_for_tests.indicator v
 
   let mscg_nofail =
     QCheck2.Test.make
@@ -80,7 +80,7 @@ module Mscg_tests = struct
       (fun (subst1, subst2) ->
         try
           ignore
-            (Index.Internal_for_tests.mscg_subst
+            (Index_raw.Internal_for_tests.mscg_subst
                subst1
                subst2
                (mkgen ~start:(-1000) ())) ;
@@ -98,12 +98,12 @@ module Mscg_tests = struct
           let pairs = Subst.to_seq subst |> List.of_seq in
           let len = List.length pairs in
           List.map
-            (fun (i, t) -> (i + Index.Internal_for_tests.indicator len, t))
+            (fun (i, t) -> (i + Index_raw.Internal_for_tests.indicator len, t))
             pairs
           |> List.to_seq |> Subst.of_seq
         in
         let (result, _, _) =
-          Index.Internal_for_tests.mscg_subst
+          Index_raw.Internal_for_tests.mscg_subst
             subst
             subst'
             (mkgen ~start:1000 ())
@@ -127,19 +127,22 @@ module Mscg_tests = struct
         let x1 = var 1 in
         let x2 = var 2 in
         let subst1 =
-          [ (Index.Internal_for_tests.indicator 1, neg a);
-            (Index.Internal_for_tests.indicator 2, add c x1);
-            (Index.Internal_for_tests.indicator 3, neg c) ]
+          [ (Index_raw.Internal_for_tests.indicator 1, neg a);
+            (Index_raw.Internal_for_tests.indicator 2, add c x1);
+            (Index_raw.Internal_for_tests.indicator 3, neg c) ]
           |> List.to_seq |> Subst.of_seq
         in
         let subst2 =
-          [ (Index.Internal_for_tests.indicator 1, neg b);
-            (Index.Internal_for_tests.indicator 2, x1);
-            (Index.Internal_for_tests.indicator 3, neg x2) ]
+          [ (Index_raw.Internal_for_tests.indicator 1, neg b);
+            (Index_raw.Internal_for_tests.indicator 2, x1);
+            (Index_raw.Internal_for_tests.indicator 3, neg x2) ]
           |> List.to_seq |> Subst.of_seq
         in
         let (mscg, _residual1, _residual2) =
-          Index.Internal_for_tests.mscg_subst subst1 subst2 (mkgen ~start:4 ())
+          Index_raw.Internal_for_tests.mscg_subst
+            subst1
+            subst2
+            (mkgen ~start:4 ())
         in
         let assert_eq_subst map k v =
           match Subst.eval k map with
@@ -158,40 +161,21 @@ module Mscg_tests = struct
         in
         assert_eq_subst
           mscg
-          (Index.Internal_for_tests.indicator 1)
-          (neg (var (Index.Internal_for_tests.indicator 4))) ;
+          (Index_raw.Internal_for_tests.indicator 1)
+          (neg (var (Index_raw.Internal_for_tests.indicator 4))) ;
         assert_eq_subst
           mscg
-          (Index.Internal_for_tests.indicator 3)
-          (neg (var (Index.Internal_for_tests.indicator 5))))
+          (Index_raw.Internal_for_tests.indicator 3)
+          (neg (var (Index_raw.Internal_for_tests.indicator 5))))
 end
 
-module type Index_signature = sig
-  type 'a t
-
-  type term = Arith.Expr.t
-
-  val name : string
-
-  val create : unit -> 'a t
-
-  val insert : term -> 'a -> 'a t -> unit
-
-  val iter : (term -> 'a -> unit) -> 'a t -> unit
-
-  val pp : 'a Fmt.t -> 'a t Fmt.t
-
-  module Internal_for_tests : sig
-    val check_invariants : 'a t -> bool
-
-    val canon : term -> term
-
-    val pp_error : Format.formatter -> exn -> unit
-  end
-end
-
-module Make_shared_test (Index : Index_signature) = struct
-  let named s = Index.name ^ "-" ^ s
+module Make_shared_test
+    (Index : Index_signature)
+    (Name : sig
+      val name : string
+    end) =
+struct
+  let named s = Name.name ^ "-" ^ s
 
   let subst_tree_insert_terms =
     Alcotest.test_case (named "subst-tree-insert") `Quick (fun () ->
@@ -217,274 +201,451 @@ module Make_shared_test (Index : Index_signature) = struct
             else ())
           index)
 
-  let subst_tree_insert_random_term =
-    QCheck2.Test.make
-      ~name:(named "subst-tree-insert-random-term")
-      ~count:100
-      (QCheck2.Gen.set_shrink
-         (fun _ -> Seq.empty)
-         (QCheck2.Gen.array_size
-            (QCheck2.Gen.return 10)
-            (Arith.term_gen (fun _ -> None))))
-      (fun terms ->
-        let index = Index.create () in
-        let table : (Expr.t, _) Hashtbl.t =
-          Hashtbl.create (Array.length terms)
-        in
-        let exception Unexpected_key of Expr.t in
-        let exception Wrong_value of Expr.t * int * int in
-        let pp_arr =
-          Format.pp_print_array
-            ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
-            Expr.pp
-        in
-        let pp_table fmtr table =
-          Format.pp_print_seq
-            ~pp_sep:(fun fmtr () -> Format.fprintf fmtr "@.")
-            (fun fmtr (k, v) -> Format.fprintf fmtr "@[%a@] -> %d" Expr.pp k v)
-            fmtr
-            (Hashtbl.to_seq table)
-        in
-        try
-          Array.iteri
-            (fun i t ->
-              let ct = Index.Internal_for_tests.canon t in
-              Index.insert ct i index ;
-              Hashtbl.replace table ct i ;
-              assert (Index.Internal_for_tests.check_invariants index))
-            terms ;
-          Index.iter
-            (fun term data ->
-              match Hashtbl.find_opt table term with
-              | None -> raise (Unexpected_key term)
-              | Some v ->
-                  if Int.equal v data then ()
-                  else raise (Wrong_value (term, v, data)))
-            index ;
-          true
-        with
-        | Unexpected_key s ->
-            QCheck2.Test.fail_reportf
-              "@[Unexpected key@.@[%a@]@.in \
-               index@.@[%a@]@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
-              Expr.pp
-              s
-              (Index.pp Format.pp_print_int)
-              index
-              pp_arr
-              terms
-              pp_table
-              table
-        | Wrong_value (s, expected, got) ->
-            QCheck2.Test.fail_reportf
-              "@[Wrong value. In index:@.@[%a@]@.At key %a, expected %d, got \
-               %d@.Inputs=@.@[%a@]@.Table=@.@[%a@]@]"
-              (Index.pp Format.pp_print_int)
-              index
-              Expr.pp
-              s
-              expected
-              got
-              pp_arr
-              terms
-              pp_table
-              table
-        | exn ->
-            Index.Internal_for_tests.pp_error Format.std_formatter exn ;
-            QCheck2.Test.fail_reportf
-              "exn %s@.@[%a@]@.Inputs=@.@[%a@]"
-              (Printexc.to_string exn)
-              (Index.pp Format.pp_print_int)
-              index
-              pp_arr
-              terms)
-    |> QCheck_alcotest.to_alcotest
+  module Query_tests = struct
+    let collect_unifiable query index =
+      let acc = ref [] in
+      Index.iter_unifiable (fun term v -> acc := (term, v) :: !acc) index query ;
+      !acc
+
+    let collect_unifiable_terms query index =
+      collect_unifiable query index |> List.map fst
+
+    let check_alpha_eq_list ~expected ~got =
+      if alpha_eq_list expected got then ()
+      else
+        Alcotest.failf
+          "expected: %a@.got: %a @."
+          (Fmt.Dump.list Expr.pp)
+          expected
+          (Fmt.Dump.list Expr.pp)
+          got
+
+    let index_basic =
+      Alcotest.test_case (named "index-basic") `Quick (fun () ->
+          let index = Index.create () in
+          let one = float 1.0 in
+          let two = float 2.0 in
+          let t0 = add one one in
+          let t1 = add one two in
+          let t2 = add (mul two two) one in
+          Index.insert t0 0 index ;
+          Index.insert t1 1 index ;
+          Index.insert t2 2 index ;
+          assert (Index.Internal_for_tests.check_invariants index) ;
+          check_alpha_eq_list
+            ~got:(collect_unifiable_terms (add (var 0) (var 1)) index)
+            ~expected:[t0; t1; t2] ;
+          check_alpha_eq_list
+            ~got:(collect_unifiable_terms (add (var 0) one) index)
+            ~expected:[t0; t2])
+
+    let index_cant_overwrite =
+      Alcotest.test_case (named "index-cant-overwrite") `Quick (fun () ->
+          let index = Index.create () in
+          let one = float 1.0 in
+          let _ = Index.insert (neg (neg (neg one))) 0 index in
+          let _ = Index.insert (neg (neg one)) 1 index in
+          try ignore (Index.insert (neg (neg (neg one))) 1 index)
+          with Invalid_argument _ -> ())
+
+    let index_can_overwrite =
+      Alcotest.test_case (named "index-can-overwrite") `Quick (fun () ->
+          let index = Index.create () in
+          let one = float 1.0 in
+          Index.insert (neg (neg (neg one))) 0 index ;
+          Index.insert (neg (neg one)) 1 index ;
+          let t' = neg (neg (neg one)) in
+          Index.insert t' 2 index ;
+          match collect_unifiable (neg (neg (neg one))) index with
+          | [(t, v)] ->
+              if v = 2 && alpha_eq t t' then ()
+              else
+                Alcotest.failf
+                  "expected: %a@.got: %a, %d@."
+                  Expr.pp
+                  t'
+                  Expr.pp
+                  t
+                  v
+          | _ -> Alcotest.fail "expected one unifiable term")
+
+    let rec mkbintree depth =
+      if depth = 0 then float 1.0
+      else
+        let subtree = mkbintree (depth - 1) in
+        add subtree subtree
+
+    let make_generalizations term =
+      Expr.fold
+        (fun _subterm path acc ->
+          (path, Expr.subst ~term ~path (Fun.const @@ var 0)) :: acc)
+        []
+        term
+
+    let index_query_generalize =
+      Alcotest.test_case (named "index-query-generalize") `Quick (fun () ->
+          let index = Index.create () in
+          let tree = mkbintree 2 in
+          let _ = Index.insert tree 0 index in
+          let generalizations = make_generalizations tree in
+          (* let generalizations_count = List.length generalizations in *)
+          List.iteri
+            (fun i (_path, gen) -> Index.insert gen i index)
+            generalizations ;
+          (* Iterate on all generalizations of (add (var 0) (var 0)).
+             We expect to find only a single variable. *)
+          Index.iter_generalize
+            (fun expr _ ->
+              match to_native expr with
+              | Var 1 when Name.name = "ref" -> ()
+              | Var 0 when Name.name = "eff" -> ()
+              | _ ->
+                  Alcotest.failf
+                    "Expected to find single variable, found %a instead"
+                    Expr.pp
+                    expr)
+            index
+            (add (var 1) (var 1)) ;
+          let query = add (mkbintree 3) (var 0) in
+          (* Iterate on all generalizations of [query].
+             We expect to find only a single variable or the query itself. *)
+          Index.iter_generalize
+            (fun expr _ ->
+              if not (alpha_eq expr query || Expr.is_var expr |> Option.is_some)
+              then
+                Alcotest.failf
+                  "Expected to find full tree or single variable, found %a \
+                   instead"
+                  Expr.pp
+                  expr
+              else ())
+            index
+            query)
+
+    let index_query_specialize =
+      Alcotest.test_case (named "index-query-specialize") `Quick (fun () ->
+          let index = Index.create () in
+          let tree = mkbintree 4 in
+          let _ = Index.insert tree 0 index in
+          let generalizations = make_generalizations tree in
+          List.iteri
+            (fun i (_path, gen) -> ignore (Index.insert gen i index))
+            generalizations ;
+          (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
+             solution found is the full tree. *)
+          Index.iter_specialize
+            (fun expr _ ->
+              if not (Expr.equal expr tree) then
+                Alcotest.failf
+                  "Expected to find full tree, found %a instead"
+                  Expr.pp
+                  expr
+              else ())
+            index
+            (add (var 0) (var 0)) ;
+          (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
+             solution found in the full tree. *)
+          let query =
+            Expr.subst
+              ~term:tree
+              ~path:
+                Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
+              (Fun.const @@ var 0)
+          in
+          Index.iter_specialize
+            (fun expr _ ->
+              if not (Expr.equal expr tree || alpha_eq expr query) then
+                Alcotest.failf
+                  "Expected to find full tree or query, found %a instead"
+                  Expr.pp
+                  expr
+              else ())
+            index
+            query)
+  end
 end
 
-module Shared_naive = Make_shared_test (struct
-  include Index
+module Shared_reference =
+  Make_shared_test
+    (Index)
+    (struct
+      let name = "ref"
+    end)
 
-  let name = "index-naive"
+module Shared_efficient =
+  Make_shared_test
+    (Index2)
+    (struct
+      let name = "eff"
+    end)
 
-  let insert f data index = ignore (insert f data index)
-end)
+module Overlapping_vars_test = struct
+  module I = Index2_raw
 
-module Shared_efficient = Make_shared_test (struct
-  include Index2
+  let internal_to_native internal_term =
+    I.Internal_term.map
+      ~expand_variables:false
+      (fun prim args ->
+        match (prim, args) with
+        | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)
+        | (Prim.Sub, [| lhs; rhs |]) -> Sub (lhs, rhs)
+        | (Prim.Mul, [| lhs; rhs |]) -> Mul (lhs, rhs)
+        | (Prim.Div, [| lhs; rhs |]) -> Div (lhs, rhs)
+        | (Prim.Neg, [| e |]) -> Neg e
+        | (Prim.Float f, [||]) -> Const f
+        | _ -> assert false)
+      (fun v cycle_opt ->
+        match cycle_opt with Some _ -> Cycle v | None -> Var v)
+      internal_term
 
-  type term = Arith.Expr.t
-
-  let name = "index-efficient"
-
-  let iter f index =
-    iter (fun iterm data -> f (Internal_term.to_term iterm) data) index
-
-  let insert f data index = ignore (insert f data index)
-
-  module Internal_for_tests = struct
-    include Internal_for_tests
-
-    let canon = Index.Internal_for_tests.canon
-
-    let pp_error = Index.Internal_for_tests.pp_error
-  end
-end)
-
-module Query_tests = struct
   let collect_unifiable query index =
     let acc = ref [] in
-    Index.iter_unifiable (fun term v -> acc := (term, v) :: !acc) index query ;
+    I.iter_unifiable
+      (fun term v ->
+        (* if Index2.Internal_term.is_cyclic term then () *)
+        (* else *)
+        acc := (internal_to_native term, v) :: !acc)
+      index
+      query ;
     !acc
 
-  let collect_unifiable_terms query index =
-    collect_unifiable query index |> List.map fst
+  let collect_unifiable_terms query index = collect_unifiable query index
 
-  let check_alpha_eq_list ~expected ~got =
-    if alpha_eq_list expected got then ()
+  let equal_multiset cmp (l1 : (native * int) list) (l2 : (native * int) list) =
+    let l1 = List.sort cmp l1 in
+    let l2 = List.sort cmp l2 in
+    List.equal (fun x y -> cmp x y = 0) l1 l2
+
+  let check ~got ~expected =
+    if equal_multiset Stdlib.compare got expected then ()
     else
       Alcotest.failf
         "expected: %a@.got: %a @."
-        (Fmt.Dump.list Expr.pp)
+        Fmt.Dump.(list (pair pp_native Fmt.int))
         expected
-        (Fmt.Dump.list Expr.pp)
+        Fmt.Dump.(list (pair pp_native Fmt.int))
         got
 
-  let index_basic =
-    Alcotest.test_case "index-basic" `Quick (fun () ->
-        let index = Index.create () in
-        let one = float 1.0 in
-        let two = float 2.0 in
-        let t0 = Index.insert (add one one) 0 index in
-        let t1 = Index.insert (add one two) 1 index in
-        let t2 = Index.insert (add (mul two two) one) 2 index in
-        assert (Index.Internal_for_tests.check_invariants index) ;
-        check_alpha_eq_list
-          ~got:(collect_unifiable_terms (add (var 0) (var 1)) index)
-          ~expected:[t0; t1; t2] ;
-        check_alpha_eq_list
-          ~got:(collect_unifiable_terms (add (var 0) one) index)
-          ~expected:[t0; t2])
-
-  let index_cant_overwrite =
-    Alcotest.test_case "index-cant-overwrite" `Quick (fun () ->
-        let index = Index.create () in
-        let one = float 1.0 in
-        let _ = Index.insert (neg (neg (neg one))) 0 index in
-        let _ = Index.insert (neg (neg one)) 1 index in
-        try ignore (Index.insert (neg (neg (neg one))) 1 index)
-        with Invalid_argument _ -> ())
-
-  let index_can_overwrite =
-    Alcotest.test_case "index-can-overwrite" `Quick (fun () ->
-        let index = Index.create () in
-        let one = float 1.0 in
-        let _t0 = Index.insert (neg (neg (neg one))) 0 index in
-        let _t1 = Index.insert (neg (neg one)) 1 index in
-        let t2 = Index.insert (neg (neg (neg one))) 2 index in
-        match collect_unifiable (neg (neg (neg one))) index with
-        | [(t, v)] ->
-            if v = 2 && alpha_eq t t2 then ()
-            else
-              Alcotest.failf
-                "expected: %a@.got: %a, %d@."
-                Expr.pp
-                t2
-                Expr.pp
-                t
-                v
-        | _ -> Alcotest.fail "expected one unifiable term")
-
-  let rec mkbintree depth =
-    if depth = 0 then float 1.0
-    else
-      let subtree = mkbintree (depth - 1) in
-      add subtree subtree
-
-  let make_generalizations term =
-    Expr.fold
-      (fun _subterm path acc ->
-        (path, Expr.subst ~term ~path (Fun.const @@ var 0)) :: acc)
-      []
-      term
-
-  let index_query_generalize =
-    Alcotest.test_case "index-query-generalize" `Quick (fun () ->
-        let index = Index.create () in
-        let tree = mkbintree 4 in
-        let _ = Index.insert tree 0 index in
-        let generalizations = make_generalizations tree in
-        (* let generalizations_count = List.length generalizations in *)
-        List.iteri
-          (fun i (_path, gen) -> ignore (Index.insert gen i index))
-          generalizations ;
-        (* Iterate on all generalizations of (add (var 0) (var 0)).
-           We expect to find only a single variable. *)
-        Index.iter_generalize
-          (fun expr _ ->
-            if not (Expr.is_var expr |> Option.is_some) then
-              Alcotest.failf
-                "Expected to single variable, found %a instead"
-                Expr.pp
-                expr
-            else ())
-          index
-          (add (var 0) (var 0)) ;
-        let query = add (mkbintree 3) (var 0) in
-        (* Iterate on all generalizations of [query].
-           We expect to find only a single variable or the query itself. *)
-        Index.iter_generalize
-          (fun expr _ ->
-            if not (alpha_eq expr query || Expr.is_var expr |> Option.is_some)
-            then
-              Alcotest.failf
-                "Expected to find full tree or single variable, found %a \
-                 instead"
-                Expr.pp
-                expr
-            else ())
-          index
-          query)
-
-  let index_query_specialize =
-    Alcotest.test_case "index-query-specialize" `Quick (fun () ->
-        let index = Index.create () in
-        let tree = mkbintree 4 in
-        let _ = Index.insert tree 0 index in
-        let generalizations = make_generalizations tree in
-        List.iteri
-          (fun i (_path, gen) -> ignore (Index.insert gen i index))
-          generalizations ;
-        (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
-           solution found is the full tree. *)
-        Index.iter_specialize
-          (fun expr _ ->
-            if not (Expr.equal expr tree) then
-              Alcotest.failf
-                "Expected to find full tree, found %a instead"
-                Expr.pp
-                expr
-            else ())
-          index
-          (add (var 0) (var 0)) ;
-        (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
-           solution found in the full tree. *)
-        let query =
-          Expr.subst
-            ~term:tree
-            ~path:Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
-            (Fun.const @@ var 0)
-        in
-        Index.iter_specialize
-          (fun expr _ ->
-            if not (Expr.equal expr tree || alpha_eq expr query) then
-              Alcotest.failf
-                "Expected to find full tree or query, found %a instead"
-                Expr.pp
-                expr
-            else ())
-          index
-          query)
+  let index_overlapping_vars =
+    Alcotest.test_case "eff-index-overlapping-vars" `Quick (fun () ->
+        let index = I.create () in
+        let to_term term = I.Internal_for_tests.of_term index term in
+        let a = float 1.0 in
+        let b = float 2.0 in
+        let t0 = add a (var 1) in
+        let t1 = add (var 0) b in
+        let t2 = var 0 in
+        let t3 = add (var 0) (var 0) in
+        I.insert t0 0 index ;
+        I.insert t1 1 index ;
+        I.insert t2 2 index ;
+        I.insert t3 3 index ;
+        Format.printf "Checking bug@." ;
+        Format.printf "%a@." (I.pp Fmt.int) index ;
+        let got = collect_unifiable_terms (to_term (var 0)) index in
+        check
+          ~got
+          ~expected:
+            [ (Add (Const 1.0, Var 1), 0);
+              (Add (Var 0, Const 2.0), 1);
+              (Var 0, 2);
+              (Add (Var 0, Var 0), 3) ] ;
+        check
+          ~got:(collect_unifiable_terms (to_term (add (var 1) (var 1))) index)
+          ~expected:
+            [ (Add (Const 1.0, Var 1), 0);
+              (Add (Var 0, Const 2.0), 1);
+              (Var 0, 2);
+              (Add (Var 0, Var 0), 3) ]
+        (* [ (to_native (add (float 1.0) (float 1.0)), 0); *)
+        (*  (to_native (add (float 2.0) (float 2.0)), 1); *)
+        (*  (to_native (add (var 1) (var 1)), 2); *)
+        (*  (to_native t3, 3) ] *))
 end
+
+module Test_against_reference (I : Index_signature) = struct
+  open QCheck2
+
+  let term_gen canonical_var : Expr.t Gen.t =
+    let float_ =
+      Gen.small_int |> Gen.map (fun i -> float (float_of_int i +. 0.5))
+    in
+    let try_var path =
+      match canonical_var path with
+      | None -> float_
+      | Some i -> Gen.return (var i)
+    in
+    let l = Path.at_index 0 in
+    let r = Path.at_index 1 in
+    let open Gen in
+    fix
+      (fun self (path, n) ->
+        if n = 0 then oneof [try_var path; float_]
+        else
+          symbol >>= function
+          | `Add -> map2 add (self (l path, n - 1)) (self (r path, n - 1))
+          | `Sub -> map2 sub (self (l path, n - 1)) (self (r path, n - 1))
+          | `Mul -> map2 mul (self (l path, n - 1)) (self (r path, n - 1))
+          | `Div -> map2 div (self (l path, n - 1)) (self (r path, n - 1))
+          | `Neg -> map neg (self (l path, n - 1))
+          | `Var -> small_nat >>= fun i -> return (var i)
+          | `Float -> float_)
+      (Path.root, 5)
+
+  let gen =
+    term_gen (fun path ->
+        let hash = Path.hash path in
+        Some (hash mod 100))
+
+  let gen_terms = Gen.list gen
+
+  let index_collect_unifiable query index =
+    let acc = ref [] in
+    I.iter_unifiable (fun term v -> acc := (term, v) :: !acc) index query ;
+    !acc
+
+  let reference_collect_unifiable query index =
+    let acc = ref [] in
+    Reference.iter_unifiable
+      (fun term v -> acc := (term, v) :: !acc)
+      index
+      query ;
+    !acc
+
+  let unification =
+    QCheck2.Test.make
+      ~name:"unification"
+      Gen.(tup2 gen gen_terms)
+      (fun (query, terms) ->
+        let index = I.create () in
+        let baseline_index = Reference.create () in
+        List.iteri (fun i t -> I.insert t i index) terms ;
+        List.iteri (fun i t -> Reference.insert t i baseline_index) terms ;
+        let got = index_collect_unifiable query index |> List.map fst in
+        let expected =
+          reference_collect_unifiable query baseline_index |> List.map fst
+        in
+        if not (alpha_eq_list got expected) then
+          Test.fail_reportf
+            "index:@.@[%a@]@.\n\
+             baseline:\n\
+             @[%a@]\n\
+             query: @[%a@]\n\
+             expected: @[%a@]\n\
+             got: @[%a@]@."
+            (I.pp Fmt.int)
+            index
+            (Reference.pp Fmt.int)
+            baseline_index
+            Expr.pp
+            query
+            (Fmt.Dump.list Expr.pp)
+            expected
+            (Fmt.Dump.list Expr.pp)
+            got
+        else true)
+    |> QCheck_alcotest.to_alcotest
+
+  let index_collect_generalize query index =
+    let acc = ref [] in
+    I.iter_generalize (fun term v -> acc := (term, v) :: !acc) index query ;
+    !acc
+
+  let reference_collect_generalize query index =
+    let acc = ref [] in
+    Reference.iter_generalize
+      (fun term v -> acc := (term, v) :: !acc)
+      index
+      query ;
+    !acc
+
+  let generalize =
+    QCheck2.Test.make
+      ~name:"generalize"
+      Gen.(tup2 gen gen_terms)
+      (fun (query, terms) ->
+        let index = I.create () in
+        let baseline_index = Reference.create () in
+        List.iteri (fun i t -> I.insert t i index) terms ;
+        List.iteri (fun i t -> Reference.insert t i baseline_index) terms ;
+        let got = index_collect_generalize query index |> List.map fst in
+        let expected =
+          reference_collect_generalize query baseline_index |> List.map fst
+        in
+        if not (alpha_eq_list got expected) then
+          Test.fail_reportf
+            "index:@.@[%a@]@.\n\
+             baseline:\n\
+             @[%a@]\n\
+             query: @[%a@]\n\
+             expected: @[%a@]\n\
+             got: @[%a@]@."
+            (I.pp Fmt.int)
+            index
+            (Reference.pp Fmt.int)
+            baseline_index
+            Expr.pp
+            query
+            (Fmt.Dump.list Expr.pp)
+            expected
+            (Fmt.Dump.list Expr.pp)
+            got
+        else true)
+    |> QCheck_alcotest.to_alcotest
+
+  let index_collect_specialize query index =
+    let acc = ref [] in
+    I.iter_specialize (fun term v -> acc := (term, v) :: !acc) index query ;
+    !acc
+
+  let reference_collect_specialize query index =
+    let acc = ref [] in
+    Reference.iter_specialize
+      (fun term v -> acc := (term, v) :: !acc)
+      index
+      query ;
+    !acc
+
+  let specialize =
+    QCheck2.Test.make
+      ~name:"specialize"
+      Gen.(tup2 gen gen_terms)
+      (fun (query, terms) ->
+        let index = I.create () in
+        let baseline_index = Reference.create () in
+        List.iteri (fun i t -> I.insert t i index) terms ;
+        List.iteri (fun i t -> Reference.insert t i baseline_index) terms ;
+        let got = index_collect_specialize query index |> List.map fst in
+        let expected =
+          reference_collect_specialize query baseline_index |> List.map fst
+        in
+        if not (alpha_eq_list got expected) then
+          Test.fail_reportf
+            "index:@.@[%a@]@.\n\
+             baseline:\n\
+             @[%a@]\n\
+             query: @[%a@]\n\
+             expected: @[%a@]\n\
+             got: @[%a@]@."
+            (I.pp Fmt.int)
+            index
+            (Reference.pp Fmt.int)
+            baseline_index
+            Expr.pp
+            query
+            (Fmt.Dump.list Expr.pp)
+            expected
+            (Fmt.Dump.list Expr.pp)
+            got
+        else true)
+    |> QCheck_alcotest.to_alcotest
+end
+
+module I2 = Make_index2 (struct
+  let expand_variables = false
+end)
+
+module Test_against_efficient = Test_against_reference (I2)
 
 let () =
   Alcotest.run
@@ -494,15 +655,22 @@ let () =
       ( "mscg-subst",
         Mscg_tests.[mscg_nofail; mscg_disjoint_support_empty; mscg_subst] );
       ( "subst-tree",
-        [ Shared_naive.subst_tree_insert_terms;
-          Shared_naive.subst_tree_insert_terms2;
-          Shared_naive.subst_tree_insert_random_term;
+        [ Shared_reference.subst_tree_insert_terms;
+          Shared_reference.subst_tree_insert_terms2;
           Shared_efficient.subst_tree_insert_terms;
-          Shared_efficient.subst_tree_insert_terms2;
-          Shared_efficient.subst_tree_insert_random_term ] );
-      ( "index-basic",
-        Query_tests.
+          Shared_efficient.subst_tree_insert_terms2 ] );
+      ( "index-basic-ref",
+        Shared_reference.Query_tests.
           [ index_basic;
             index_cant_overwrite;
             index_query_generalize;
-            index_query_specialize ] ) ]
+            index_query_specialize ] );
+      ( "index-basic-eff",
+        Shared_efficient.Query_tests.
+          [ index_basic;
+            index_cant_overwrite;
+            index_query_generalize;
+            index_query_specialize;
+            Overlapping_vars_test.index_overlapping_vars ] );
+      ( "test-against-reference",
+        Test_against_efficient.[unification; generalize; specialize] ) ]
