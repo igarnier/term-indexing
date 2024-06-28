@@ -64,7 +64,7 @@ module type Index_signature = sig
   end
 end
 
-module Index_raw = Index.Make (Prim) (Var_map) (Expr) (Subst_mod)
+module Index_raw = Slow_index.Make (Prim) (Var_map) (Expr) (Subst_mod)
 
 module Index : Index_signature = struct
   include Index_raw
@@ -95,29 +95,19 @@ end) : Index_signature = struct
 
   let iter_unifiable f index query =
     iter_unifiable
-      (fun iterm data ->
-        (* if Internal_term.is_cyclic iterm then () *)
-        (* else *)
-        let () = Format.printf "iter_unifiable: %a@." Internal_term.pp iterm in
-        f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_generalize f index query =
     iter_generalize
-      (fun iterm data ->
-        (* if Internal_term.is_cyclic iterm then () *)
-        (* else *)
-        f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_specialize f index query =
     iter_specialize
-      (fun iterm data ->
-        (* if Internal_term.is_cyclic iterm then () *)
-        (* else *)
-        f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
       index
       (Internal_for_tests.of_term index query)
 

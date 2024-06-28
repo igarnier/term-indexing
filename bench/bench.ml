@@ -130,7 +130,7 @@ end
 
 module Expr = Term.Make_hash_consed (Prim) (Var_map)
 module Subst_mod = Subst.Make (Prim) (Var_map) (Expr)
-module Index = Index.Make (Prim) (Var_map) (Expr) (Subst_mod)
+module Index = Slow_index.Make (Prim) (Var_map) (Expr) (Subst_mod)
 module Subst = Subst_mod
 
 module _ =

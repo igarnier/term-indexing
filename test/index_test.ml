@@ -440,8 +440,6 @@ module Overlapping_vars_test = struct
         I.insert t1 1 index ;
         I.insert t2 2 index ;
         I.insert t3 3 index ;
-        Format.printf "Checking bug@." ;
-        Format.printf "%a@." (I.pp Fmt.int) index ;
         let got = collect_unifiable_terms (to_term (var 0)) index in
         check
           ~got
