@@ -78,7 +78,7 @@ module Index : Index_signature = struct
   let iter_specialize f index query = iter_specialize f index query
 end
 
-module Index2_raw = Index2.Make (Prim) (Expr)
+module Index2_raw = Term_index.Make (Prim) (Expr)
 
 module Make_index2 (X : sig
   val expand_variables : bool

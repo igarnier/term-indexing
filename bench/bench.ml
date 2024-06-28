@@ -144,7 +144,7 @@ module _ =
       let insert k v i = ignore (insert k v i)
     end)
 
-module Index2 = Index2.Make (Prim) (Expr)
+module Index2 = Term_index.Make (Prim) (Expr)
 
 module _ =
   Make_bench
