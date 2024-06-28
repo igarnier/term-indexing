@@ -333,8 +333,7 @@ module Make
 
      Pre-condition: [subst_term] contains no [IVar]
      Post-condition: generalized sub-terms of [node_term] are set to [Internal_term.IVar] and
-     appear in the domain of both [residual_subst] and [residual_node]
-  *)
+     appear in the domain of both [residual_subst] and [residual_node] *)
   let rec mscg (subst_term : Internal_term.t) (node_term : Internal_term.t)
       (residual_subst : subst) (residual_node : subst) : subst * subst =
     match (!subst_term, !node_term) with
@@ -382,13 +381,10 @@ module Make
 
   (* Note: [update_subst] is not robust to sharing sub-terms across inserted terms. *)
   let update_subst term f (tree : 'a t) =
-    (* Format.printf "inserting@.%a@." Internal_term.pp term ; *)
-    (* Format.printf "%a@." (pp Fmt.int) tree ; *)
     let rec insert_aux (subst : subst) (t : 'a node Vec.vector) i =
       (* Precondition: domain of [subst] is set *)
       (* Postcondition: domain of [subst] is unset *)
       (* Postcondition: domain of [(Vec.get t i).head] is unset *)
-      (* Format.printf "subst: %a@." pp_subst subst ; *)
       if i >= Vec.length t then (
         (* Format.printf "End of vector@." ; *)
         Vec.push
@@ -432,18 +428,6 @@ module Make
             ([], [], [])
             head
         in
-
-        (* let () = *)
-        (*   Format.printf "head@." ; *)
-        (*   Format.printf "%a@." pp_subst head ; *)
-        (*   Format.printf "general@." ; *)
-        (*   Format.printf "%a@." pp_subst general ; *)
-        (*   Format.printf "residual_subst@." ; *)
-        (*   Format.printf "%a@." pp_subst residual_subst ; *)
-        (*   Format.printf "residual_node@." ; *)
-        (*   Format.printf "%a@." pp_subst residual_node *)
-        (* in *)
-
         (*
            At this point:
            - subst = residual_subst \circ general
@@ -493,16 +477,6 @@ module Make
               subst
           in
           let () = List.iter (fun (v, t) -> v := !t) residual_subst in
-          (* let () = *)
-          (*   Format.printf "reset head@." ; *)
-          (*   Format.printf "%a@." pp_subst head ; *)
-          (*   Format.printf "general@." ; *)
-          (*   Format.printf "%a@." pp_subst general ; *)
-          (*   Format.printf "residual_subst@." ; *)
-          (*   Format.printf "%a@." pp_subst residual_subst ; *)
-          (*   Format.printf "residual_node@." ; *)
-          (*   Format.printf "%a@." pp_subst residual_node *)
-          (* in *)
           if subst_is_empty residual_subst && subst_is_empty residual_node then
             (* exact match: general = head *)
             (* At this point:
@@ -529,8 +503,6 @@ module Make
             *)
 
             (* subst refines head *)
-            (* Format.printf "instantiating@." ; *)
-            (* Format.printf "%a@." pp_subst residual_subst ; *)
             insert_aux residual_subst subtrees 0
           else (
             (* [subst] has a nontrivial mscg
@@ -902,14 +874,6 @@ module Make
       match subst with
       | [] -> (undo_stack, true)
       | (v, t) :: rest ->
-          (* let () = *)
-          (*   Format.printf *)
-          (*     "check_generalize: %a vs %a@." *)
-          (*     Internal_term.pp *)
-          (*     v *)
-          (*     Internal_term.pp *)
-          (*     t *)
-          (* in *)
           let (undo_stack, success) = check_generalize undo_stack v t in
           if success then (
             let desc = !v in
@@ -927,8 +891,6 @@ module Make
     | Generalize -> Fmt.string fmtr "Generalize"
 
   let rec iter_query_node f node root qkind =
-    (* Format.printf "head = %a@." pp_subst node.head ; *)
-    (* Format.printf "subst before check: %a@." pp_subst node.head ; *)
     let (undo_stack, success) =
       match qkind with
       | Unifiable -> Unifiable_query.unification_subst [] node.head
@@ -936,15 +898,9 @@ module Make
       | Generalize -> Generalize_query.check_generalize_subst [] node.head
     in
     if success then (
-      (* Format.printf "%a success@." pp_query_kind qkind ; *)
-      (* Format.printf "subst after check: %a@." pp_subst node.head ; *)
-      (match node.data with
-      | None -> ()
-      | Some data ->
-          (* Format.printf "match: %a@." Internal_term.pp root ; *)
-          f root data) ;
+      (match node.data with None -> () | Some data -> f root data) ;
       Vec.iter (fun node -> iter_query_node f node root qkind) node.subtrees)
-    else () (* Format.printf "%a fail@." pp_query_kind qkind *) ;
+    else () ;
     List.iter (fun (v, d) -> v := d) undo_stack
 
   let iter_query f (index : 'a t) (qkind : query_kind) (query : Internal_term.t)
