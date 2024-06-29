@@ -63,7 +63,7 @@ module Stub () = struct
     I.iter_unifiable
       (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (add (var 0) (var 1)))
+      (add (var 0) (var 1))
 
   let () =
     Format.printf
@@ -73,7 +73,7 @@ module Stub () = struct
     I.iter_unifiable
       (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (add (var 0) (var 0)))
+      (add (var 0) (var 0))
 
   let () = Format.printf "@.testing specialization search@."
 
@@ -81,7 +81,7 @@ module Stub () = struct
     I.iter_specialize
       (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (add (var 0) (var 1)))
+      (add (var 0) (var 1))
 
   let () =
     Format.printf "@.testing specialization search with equality constraints@."
@@ -90,7 +90,7 @@ module Stub () = struct
     I.iter_specialize
       (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (add (var 0) (var 0)))
+      (add (var 0) (var 0))
 
   let () = Format.printf "@.testing specialization search with no constraints@."
 
@@ -98,7 +98,7 @@ module Stub () = struct
     I.iter_specialize
       (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (var 0))
+      (var 0)
 
   let () =
     Format.printf "@.testing specialization search with overlapping variables@."
@@ -115,7 +115,7 @@ module Stub () = struct
     I.iter_generalize
       (fun k v -> Format.printf "%a -> value=%d@." I.pp_internal_term k v)
       index
-      (I.Internal_for_tests.of_term index (add (var 2) (var 1)))
+      (add (var 2) (var 1))
 
   let () = Format.printf "@.testing generalization@."
 
@@ -157,13 +157,13 @@ module Stub () = struct
           (I.to_term k)
           v)
       index
-      (I.Internal_for_tests.of_term index (add (var 1) (var 1)))
+      (add (var 1) (var 1))
 
   let () = Format.printf "@.testing unification with overlapping variables@."
 
   let index = I.create ()
 
-  let to_term term = I.Internal_for_tests.of_term index term
+  let to_term term = term
 
   let a = float 1.0
 

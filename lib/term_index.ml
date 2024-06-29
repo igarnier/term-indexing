@@ -4,8 +4,10 @@ module type S = sig
   (** [prim] is the type of primitive symbols used in terms. *)
   type prim
 
+  (** [term] is the type of first-order terms. *)
   type term
 
+  (** [subst] is the type of substitutions, i.e. finite functions from variables to {!term}. *)
   type subst
 
   type var := int
@@ -55,20 +57,17 @@ module type S = sig
   (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
-  val iter_unifiable :
-    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
+  val iter_unifiable : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
 
   (** [iter_specialize f index query] applies [f] on all terms specializing [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
-  val iter_specialize :
-    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
+  val iter_specialize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
 
   (** [iter_generalize f index query] applies [f] on all terms generalizing [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
-  val iter_generalize :
-    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
+  val iter_generalize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
 
   module Internal_for_tests : sig
     type subst
@@ -959,9 +958,12 @@ module Make
     Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
     index.root := IVar
 
-  let iter_unifiable f index query = iter_query f index Unifiable query
+  let iter_unifiable f index query =
+    iter_query f index Unifiable (of_term index query)
 
-  let iter_specialize f index query = iter_query f index Specialize query
+  let iter_specialize f index query =
+    iter_query f index Specialize (of_term index query)
 
-  let iter_generalize f index query = iter_query f index Generalize query
+  let iter_generalize f index query =
+    iter_query f index Generalize (of_term index query)
 end

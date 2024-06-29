@@ -88,22 +88,13 @@ module Index2 = struct
   let iter f index = iter (fun iterm data -> f (to_term iterm) data) index
 
   let iter_unifiable f index query =
-    iter_unifiable
-      (fun iterm data -> f (to_term iterm) data)
-      index
-      (Internal_for_tests.of_term index query)
+    iter_unifiable (fun iterm data -> f (to_term iterm) data) index query
 
   let iter_generalize f index query =
-    iter_generalize
-      (fun iterm data -> f (to_term iterm) data)
-      index
-      (Internal_for_tests.of_term index query)
+    iter_generalize (fun iterm data -> f (to_term iterm) data) index query
 
   let iter_specialize f index query =
-    iter_specialize
-      (fun iterm data -> f (to_term iterm) data)
-      index
-      (Internal_for_tests.of_term index query)
+    iter_specialize (fun iterm data -> f (to_term iterm) data) index query
 
   let insert f data index = ignore (insert f data index)
 end

@@ -428,7 +428,6 @@ module Overlapping_vars_test = struct
   let index_overlapping_vars =
     Alcotest.test_case "eff-index-overlapping-vars" `Quick (fun () ->
         let index = I.create () in
-        let to_term term = I.Internal_for_tests.of_term index term in
         let a = float 1.0 in
         let b = float 2.0 in
         let t0 = add a (var 1) in
@@ -439,7 +438,7 @@ module Overlapping_vars_test = struct
         I.insert t1 1 index ;
         I.insert t2 2 index ;
         I.insert t3 3 index ;
-        let got = collect_unifiable_terms (to_term (var 0)) index in
+        let got = collect_unifiable_terms (var 0) index in
         check
           ~got
           ~expected:
@@ -448,7 +447,7 @@ module Overlapping_vars_test = struct
               (Var 0, 2);
               (Add (Var 0, Var 0), 3) ] ;
         check
-          ~got:(collect_unifiable_terms (to_term (add (var 1) (var 1))) index)
+          ~got:(collect_unifiable_terms (add (var 1) (var 1)) index)
           ~expected:
             [ (Add (Const 1.0, Var 1), 0);
               (Add (Var 0, Const 2.0), 1);
