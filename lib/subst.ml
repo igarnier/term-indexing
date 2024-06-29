@@ -3,14 +3,9 @@ module Vec = Containers.Vector
 module Make
     (P : Intf.Signature)
     (M : Intf.Map with type key = int)
-    (T : Intf.Term
-           with type prim = P.t
-            and type t = P.t Term.term
-            and type 'a var_map = 'a M.t) :
-  Intf.Subst with type term = T.t and type 'a var_map = 'a T.var_map = struct
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) :
+  Intf.Subst with type term = T.t = struct
   type term = T.t
-
-  type 'a var_map = 'a T.var_map
 
   type t = T.t M.t
 
@@ -37,8 +32,6 @@ module Make
       (fun acc (v, t) -> Int_option.(max (of_int (abs v)) (max (T.ub t) acc)))
       Int_option.none
       (to_seq subst)
-
-  let underlying_map subst = subst
 
   let eval = M.find_opt
 

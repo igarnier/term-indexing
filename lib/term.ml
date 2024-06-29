@@ -215,7 +215,7 @@ module Make_hash_consed
 end
 
 module Default_map : Intf.Map with type key = int = struct
-  include Map.Make (Int)
+  include Int_map
 
   let empty () = empty
 

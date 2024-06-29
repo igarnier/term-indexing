@@ -223,8 +223,6 @@ module type Subst = sig
   (** The type of terms *)
   type term
 
-  type 'a var_map
-
   type var := int
 
   (** The type of substitutions *)
@@ -249,9 +247,6 @@ module type Subst = sig
   (** [ub subst] is an upper bound on the absolute value of variables appearing in [subst]
       (either in the domain or the range of the substitution). *)
   val ub : t -> Int_option.t
-
-  (** [underlying_map subst] returns the underlying map of the substitution. *)
-  val underlying_map : t -> term var_map
 
   (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
       or [None] if [v] is not in the domain of [subst]. *)

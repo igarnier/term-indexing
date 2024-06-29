@@ -53,7 +53,7 @@ module Make
            with type prim = P.t
             and type t = P.t Term.term
             and type 'a var_map = 'a M.t)
-    (S : Intf.Subst with type term = T.t and type 'a var_map = 'a T.var_map) :
+    (S : Intf.Subst with type term = T.t) :
   S with type term = T.t and type subst = S.t = struct
   type term = T.t
 
