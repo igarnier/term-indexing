@@ -677,15 +677,7 @@ module Make
           if P.equal prim1 prim2 then unify_arrays undo_stack args1 args2 0
           else (undo_stack, false)
       | (Var (_, repr_ptr1), Var (_, repr_ptr2)) -> (
-          Format.printf
-            "var %a to var %a@."
-            Internal_term.pp
-            term1
-            Internal_term.pp
-            term2 ;
-          if repr_ptr1 == repr_ptr2 then
-            let () = Format.printf "exact match@." in
-            (undo_stack, true)
+          if repr_ptr1 == repr_ptr2 then (undo_stack, true)
           else
             (* term1, term2 are [Var], hence precondition of [get_repr] is satisfied *)
             (* TODO: get_repr: could return [repr] _and_ [root] to avoid destructuring *)
@@ -708,21 +700,9 @@ module Make
                     (* TODO bug: it may be the case that repr1 == repr2, if we
                        perform the assignment then we'll introduce a cycle. *)
                     if root1 == root2 then (undo_stack, true)
-                    else
-                      let () =
-                        Format.printf
-                          "var %a with repr %a points to repr %a of var %a@."
-                          Internal_term.pp
-                          term1
-                          Internal_term.pp
-                          repr1
-                          Internal_term.pp
-                          repr2
-                          Internal_term.pp
-                          term2
-                      in
+                    else (
                       root1 := !repr2 ;
-                      ((root1, IVar) :: undo_stack, true)
+                      ((root1, IVar) :: undo_stack, true))
                 | _ ->
                     (* Impossible case *)
                     assert false)

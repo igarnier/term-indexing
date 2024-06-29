@@ -1,2 +1,2 @@
-- unification incl. occur check
-- substitution tree
+- special-case atoms in subst tree / term repr
+- more efficient repr of undo stacks in subst trees

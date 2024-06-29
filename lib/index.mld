@@ -7,7 +7,7 @@ Let us illustrate the features of this library. The entrypoint is the module {!m
 
 First-order terms are parameterized by a {{!Term_indexing.Intf.Signature}[Intf.Signature]} which describes the primitives
 and their arity. A term is either a variable, or constructed by applying a primitive to the right number
-of sub-terms. For instance, the arithmetic expression {m x_0 + x_1 * x_1} can be represented as a term
+of sub-terms. For instance, the arithmetic expression {m x_0 + x_1 * x_1} can be represented as
 a term constructed with primitives for addition and multiplication.
 We'll look at a small language for manipulating such expressions.
 
@@ -17,9 +17,9 @@ open Term_indexing
 (* The type of primitives *)
 type prim = Add | Mul | Neg | Float of float
 
-(* [Prim] implements [Intf.Signature]  *)
+(* [Prim] implements [Intf.Signature].
+   We use the [Stdlib]'s polymorphic comparison and hash operators for simplicity.  *)
 module Prim : Intf.Signature with type t = prim = struct
-
   type t = prim
 
   let compare (x : t) (y : t) = Stdlib.compare x y
@@ -30,10 +30,10 @@ module Prim : Intf.Signature with type t = prim = struct
 
   let pp fmtr = ...
 
-  (* Each primitive is associated to an arity, which corresponds to the number
-      of function maps each constructor to its number of expected arguments;
-      e.g. addition is a binary operation, negation is a unary operation and
-      constants are 0-ary.  *)
+  (* Each primitive is associated to an arity, which maps each constructor to its number
+     of expected arguments;
+     e.g. addition is a binary operation, negation is a unary operation and
+     constants are 0-ary.  *)
   let arity = function Add | Mul -> 2 | Neg -> 1 | Float _ -> 0
 end
 ]}
