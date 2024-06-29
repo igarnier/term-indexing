@@ -452,11 +452,7 @@ module Overlapping_vars_test = struct
             [ (Add (Const 1.0, Var 1), 0);
               (Add (Var 0, Const 2.0), 1);
               (Var 0, 2);
-              (Add (Var 0, Var 0), 3) ]
-        (* [ (to_native (add (float 1.0) (float 1.0)), 0); *)
-        (*  (to_native (add (float 2.0) (float 2.0)), 1); *)
-        (*  (to_native (add (var 1) (var 1)), 2); *)
-        (*  (to_native t3, 3) ] *))
+              (Add (Var 0, Var 0), 3) ])
 end
 
 module Test_against_reference (I : Index_signature) = struct
