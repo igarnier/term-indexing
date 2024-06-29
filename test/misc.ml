@@ -187,7 +187,6 @@ module Stub () = struct
 
   let internal_to_native internal_term =
     I.Internal_term.map
-      ~expand_variables:false
       (fun prim args ->
         match (prim, args) with
         | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)

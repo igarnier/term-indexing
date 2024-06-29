@@ -384,7 +384,6 @@ module Overlapping_vars_test = struct
 
   let internal_to_native internal_term =
     I.Internal_term.map
-      ~expand_variables:false
       (fun prim args ->
         match (prim, args) with
         | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)
@@ -639,11 +638,7 @@ module Test_against_reference (I : Index_signature) = struct
     |> QCheck_alcotest.to_alcotest
 end
 
-module I2 = Make_index2 (struct
-  let expand_variables = false
-end)
-
-module Test_against_efficient = Test_against_reference (I2)
+module Test_against_efficient = Test_against_reference (Index2)
 
 let () =
   Alcotest.run

@@ -78,45 +78,36 @@ module Index : Index_signature = struct
   let iter_specialize f index query = iter_specialize f index query
 end
 
-module Index2_raw = Term_index.Make (Prim) (Expr)
+module Index2_raw = Term_index.Make (Prim) (Expr) (Subst_mod)
 
-module Make_index2 (X : sig
-  val expand_variables : bool
-end) : Index_signature = struct
-  open X
+module Index2 = struct
   include Index2_raw
 
   type term = Expr.t
 
   let iter f index =
-    iter
-      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
-      index
+    iter (fun iterm data -> f (Internal_term.to_term iterm) data) index
 
   let iter_unifiable f index query =
     iter_unifiable
-      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_generalize f index query =
     iter_generalize
-      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_specialize f index query =
     iter_specialize
-      (fun iterm data -> f (Internal_term.to_term ~expand_variables iterm) data)
+      (fun iterm data -> f (Internal_term.to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let insert f data index = ignore (insert f data index)
 end
-
-module Index2 = Make_index2 (struct
-  let expand_variables = false
-end)
 
 module Reference = Naive_index.Make (Prim) (Expr) (Subst_mod)
 module Subst = Subst_mod

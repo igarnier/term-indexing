@@ -3,6 +3,8 @@ module Vec = Containers.Vector
 module type S = sig
   type term
 
+  type subst
+
   module Internal_term : sig
     type t
 
@@ -14,45 +16,74 @@ module type S = sig
 
     val is_cyclic : t -> bool
 
-    val to_term : ?expand_variables:bool -> t -> term
+    val to_term : t -> term
 
-    val map :
-      ?expand_variables:bool ->
-      (prim -> 'a array -> 'a) ->
-      (var -> t option -> 'a) ->
-      t ->
-      'a
+    val map : (prim -> 'a array -> 'a) -> (var -> t option -> 'a) -> t -> 'a
 
     val pp : t Fmt.t
   end
 
-  type subst
+  (** [internal_term] is the internal representation of terms in the index.
 
+      Due to the details of the implementation, it might be the case that
+      the result of querying the index is a term containing cycle. This might
+      occur if for instance the querying term contains variables overlapping
+      the terms contained in the index.
+
+      The type [internal_term] is also used to represent substitutions.
+  *)
+  type internal_term
+
+  (** [is_cyclic term] checks whether a term contains a cycle or not. *)
+  val is_cyclic : internal_term -> bool
+
+  val to_term : internal_term -> term
+
+  val get_subst : internal_term -> subst
+
+  (** [prim] is the type of primitive symbols used in terms. *)
+  type prim
+
+  (** ['a t] is the type of term indexes mapping terms to values of type ['a]. *)
   type 'a t
 
-  val pp_subst : subst Fmt.t
-
+  (** [pp pp_val] allows to pretty-print values of type ['a t] given [pp_val], a
+      pretty-printer for values of type ['a]. *)
   val pp : 'a Fmt.t -> 'a t Fmt.t
 
+  (** [create ()] creates an empty index. *)
   val create : unit -> 'a t
 
   val insert : term -> 'a -> 'a t -> unit
 
+  (** [iter f index] iterates [f] on all bindings of [index].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
   val iter : (Internal_term.t -> 'a -> unit) -> 'a t -> unit
 
-  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query]. *)
+  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
   val iter_unifiable :
     (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
 
-  (** [iter_specialize f index query] applies [f] on all terms specializing [query]. *)
+  (** [iter_specialize f index query] applies [f] on all terms specializing [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
   val iter_specialize :
     (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
 
-  (** [iter_generalize f index query] applies [f] on all terms generalizing [query]. *)
+  (** [iter_generalize f index query] applies [f] on all terms generalizing [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
   val iter_generalize :
     (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
 
   module Internal_for_tests : sig
+    type subst
+
+    val pp_subst : subst Fmt.t
+
     val of_term : 'a t -> term -> Internal_term.t
 
     val check_invariants : 'a t -> bool
@@ -96,11 +127,15 @@ end
 
 module Make
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) :
-  S with type term = T.t and type Internal_term.prim = P.t = struct
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+    (S : Intf.Subst with type term = T.t) :
+  S with type term = T.t and type Internal_term.prim = P.t and type subst = S.t =
+struct
   open IRef
 
   type term = T.t
+
+  type subst = S.t
 
   module Internal_term = struct
     type prim = P.t
@@ -120,23 +155,6 @@ module Make
     type var_table = (int, t) Hashtbl.t
 
     module IS = Set.Make (Int)
-
-    let uid (t : t) = uid t
-
-    let is_cyclic (term : t) =
-      let rec loop : IS.t -> t -> bool =
-       fun set term ->
-        if IS.mem (uid term) set then true
-        else
-          let set = IS.add (uid term) set in
-          match !term with
-          | Var (_, repr) -> (
-              match !repr with IVar -> false | _ -> loop set repr)
-          | Prim (_, subtrees) ->
-              Array.exists (fun term -> loop set term) subtrees
-          | IVar -> false
-      in
-      loop IS.empty term
 
     module Pp = struct
       let to_tree term =
@@ -166,11 +184,28 @@ module Make
 
     include Pp
 
+    let uid (t : t) = uid t
+
+    let is_cyclic (term : t) =
+      let rec loop : IS.t -> t -> bool =
+       fun set term ->
+        if IS.mem (uid term) set then true
+        else
+          let set = IS.add (uid term) set in
+          match !term with
+          | Var (_, repr) -> (
+              match !repr with IVar -> false | _ -> loop set repr)
+          | Prim (_, subtrees) ->
+              Array.exists (fun term -> loop set term) subtrees
+          | IVar -> false
+      in
+      loop IS.empty term
+
     let is_ivar (t : t) = match !t with IVar -> true | _ -> false
 
     let prim p subterms = ref (Prim (p, subterms))
 
-    let map ?(expand_variables = true) fprim fvar term =
+    let map fprim fvar term =
       let rec loop fprim fvar visited term =
         match !term with
         | Prim (prim, subterms) ->
@@ -180,9 +215,6 @@ module Make
             | IVar -> fvar v None
             | Prim _ | Var _ ->
                 if IS.mem (uid repr) visited then fvar v (Some repr)
-                else if expand_variables then
-                  let visited = IS.add (uid repr) visited in
-                  loop fprim fvar visited repr
                 else fvar v None)
         | IVar -> assert false
       in
@@ -220,7 +252,7 @@ module Make
           let subtrees = Array.map (fun t -> of_term table t) subtrees in
           prim p subtrees
 
-    let to_term ?(expand_variables = true) term =
+    let to_term term =
       let rec to_term : IS.t -> t -> T.t =
        fun set term ->
         let set =
@@ -228,23 +260,46 @@ module Make
           else IS.add (uid term) set
         in
         match !term with
-        | Var (v, repr) -> (
-            if not expand_variables then T.var v
-            else match !repr with IVar -> T.var v | _ -> to_term set repr)
+        | Var (v, _repr) -> T.var v
         | Prim (p, subtrees) ->
             let subtrees = Array.map (to_term set) subtrees in
             T.prim p subtrees
         | IVar -> failwith "to_term: encountered an internal variable"
       in
       to_term IS.empty term
+
+    let get_subst : t -> S.t =
+      let rec loop : S.t -> t -> S.t =
+       fun subst term ->
+        match !term with
+        | Var (v, repr) -> (
+            match !repr with
+            | IVar -> subst
+            | Prim _ | Var _ ->
+                if S.eval v subst |> Option.is_some then subst
+                else S.add v (to_term repr) subst)
+        | Prim (_, subtrees) -> Array.fold_left loop subst subtrees
+        | IVar -> subst
+      in
+      fun term -> loop (S.empty ()) term
   end
+
+  type internal_term = Internal_term.t
+
+  type prim = P.t
+
+  let is_cyclic = Internal_term.is_cyclic
+
+  let to_term = Internal_term.to_term
+
+  let get_subst = Internal_term.get_subst
 
   type iref = Internal_term.t
 
-  type subst = (iref * Internal_term.t) list
+  type isubst = (iref * Internal_term.t) list
 
   type 'a node =
-    { mutable head : subst;
+    { mutable head : isubst;
       mutable subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
@@ -335,7 +390,7 @@ module Make
      Post-condition: generalized sub-terms of [node_term] are set to [Internal_term.IVar] and
      appear in the domain of both [residual_subst] and [residual_node] *)
   let rec mscg (subst_term : Internal_term.t) (node_term : Internal_term.t)
-      (residual_subst : subst) (residual_node : subst) : subst * subst =
+      (residual_subst : isubst) (residual_node : isubst) : isubst * isubst =
     match (!subst_term, !node_term) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
         if P.equal prim1 prim2 then
@@ -381,7 +436,7 @@ module Make
 
   (* Note: [update_subst] is not robust to sharing sub-terms across inserted terms. *)
   let update_subst term f (tree : 'a t) =
-    let rec insert_aux (subst : subst) (t : 'a node Vec.vector) i =
+    let rec insert_aux (subst : isubst) (t : 'a node Vec.vector) i =
       (* Precondition: domain of [subst] is set *)
       (* Postcondition: domain of [subst] is unset *)
       (* Postcondition: domain of [(Vec.get t i).head] is unset *)
@@ -555,6 +610,10 @@ module Make
   module Internal_for_tests = struct
     module Int_set = Set.Make (Int)
 
+    type subst = isubst
+
+    let pp_subst = pp_subst
+
     exception Not_well_scoped of Internal_term.t * Int_set.t
 
     exception Not_properly_unset
@@ -600,7 +659,6 @@ module Make
   end
 
   let update term f index = update_subst term f index
-  (* ; Internal_for_tests.check_invariants index |> ignore *)
 
   let insert term data tree =
     update (Internal_term.of_term tree.var_table term) (fun _ -> data) tree
