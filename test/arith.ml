@@ -85,24 +85,23 @@ module Index2 = struct
 
   type term = Expr.t
 
-  let iter f index =
-    iter (fun iterm data -> f (Internal_term.to_term iterm) data) index
+  let iter f index = iter (fun iterm data -> f (to_term iterm) data) index
 
   let iter_unifiable f index query =
     iter_unifiable
-      (fun iterm data -> f (Internal_term.to_term iterm) data)
+      (fun iterm data -> f (to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_generalize f index query =
     iter_generalize
-      (fun iterm data -> f (Internal_term.to_term iterm) data)
+      (fun iterm data -> f (to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 
   let iter_specialize f index query =
     iter_specialize
-      (fun iterm data -> f (Internal_term.to_term iterm) data)
+      (fun iterm data -> f (to_term iterm) data)
       index
       (Internal_for_tests.of_term index query)
 

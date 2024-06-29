@@ -27,7 +27,7 @@ module Stub () = struct
   let () = Format.printf "three@.%a@." (I.pp Fmt.int) index
 
   let () =
-    I.iter (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v) index
+    I.iter (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v) index
 
   (* iter-unifiable *)
 
@@ -35,7 +35,7 @@ module Stub () = struct
 
   (* let () = *)
   (*   I.iter_unifiable *)
-  (*     (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v) *)
+  (*     (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v) *)
   (*     index *)
   (*     (I.of_term index (add (var 0) (var 1))) *)
 
@@ -61,7 +61,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (add (var 0) (var 1)))
 
@@ -71,7 +71,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (add (var 0) (var 0)))
 
@@ -79,7 +79,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (add (var 0) (var 1)))
 
@@ -88,7 +88,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (add (var 0) (var 0)))
 
@@ -96,7 +96,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (var 0))
 
@@ -113,7 +113,7 @@ module Stub () = struct
 
   let () =
     I.iter_generalize
-      (fun k v -> Format.printf "%a -> value=%d@." I.Internal_term.pp k v)
+      (fun k v -> Format.printf "%a -> value=%d@." I.pp_internal_term k v)
       index
       (I.Internal_for_tests.of_term index (add (var 2) (var 1)))
 
@@ -151,10 +151,10 @@ module Stub () = struct
       (fun k v ->
         Format.printf
           "%a -> %a -> value=%d@."
-          I.Internal_term.pp
+          I.pp_internal_term
           k
           Expr.pp
-          (I.Internal_term.to_term k)
+          (I.to_term k)
           v)
       index
       (I.Internal_for_tests.of_term index (add (var 1) (var 1)))
@@ -186,7 +186,7 @@ module Stub () = struct
   let of_term = I.Internal_for_tests.of_term index
 
   let internal_to_native internal_term =
-    I.Internal_term.map
+    I.map
       (fun prim args ->
         match (prim, args) with
         | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)
@@ -241,7 +241,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun term v -> Format.printf "found %a -> %d@." I.Internal_term.pp term v)
+      (fun term v -> Format.printf "found %a -> %d@." I.pp_internal_term term v)
       index
       (to_term (float 1.0))
 end

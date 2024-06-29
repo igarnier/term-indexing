@@ -145,14 +145,4 @@ module _ =
     end)
 
 module Index2 = Term_index.Make (Prim) (Expr) (Subst)
-
-module _ =
-  Make_bench
-    (Expr)
-    (struct
-      include Index2
-
-      type term = Expr.t
-
-      type internal_term = Internal_term.t
-    end)
+module _ = Make_bench (Expr) (Index2)

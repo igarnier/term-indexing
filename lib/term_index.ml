@@ -1,27 +1,14 @@
 module Vec = Containers.Vector
 
 module type S = sig
+  (** [prim] is the type of primitive symbols used in terms. *)
+  type prim
+
   type term
 
   type subst
 
-  module Internal_term : sig
-    type t
-
-    type prim
-
-    type var := int
-
-    val uid : t -> int
-
-    val is_cyclic : t -> bool
-
-    val to_term : t -> term
-
-    val map : (prim -> 'a array -> 'a) -> (var -> t option -> 'a) -> t -> 'a
-
-    val pp : t Fmt.t
-  end
+  type var := int
 
   (** [internal_term] is the internal representation of terms in the index.
 
@@ -30,8 +17,7 @@ module type S = sig
       occur if for instance the querying term contains variables overlapping
       the terms contained in the index.
 
-      The type [internal_term] is also used to represent substitutions.
-  *)
+      The type [internal_term] is also used to represent substitutions. *)
   type internal_term
 
   (** [is_cyclic term] checks whether a term contains a cycle or not. *)
@@ -41,8 +27,13 @@ module type S = sig
 
   val get_subst : internal_term -> subst
 
-  (** [prim] is the type of primitive symbols used in terms. *)
-  type prim
+  val map :
+    (prim -> 'a array -> 'a) ->
+    (var -> internal_term option -> 'a) ->
+    internal_term ->
+    'a
+
+  val pp_internal_term : internal_term Fmt.t
 
   (** ['a t] is the type of term indexes mapping terms to values of type ['a]. *)
   type 'a t
@@ -59,32 +50,32 @@ module type S = sig
   (** [iter f index] iterates [f] on all bindings of [index].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
-  val iter : (Internal_term.t -> 'a -> unit) -> 'a t -> unit
+  val iter : (internal_term -> 'a -> unit) -> 'a t -> unit
 
   (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
   val iter_unifiable :
-    (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
+    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
 
   (** [iter_specialize f index query] applies [f] on all terms specializing [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
   val iter_specialize :
-    (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
+    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
 
   (** [iter_generalize f index query] applies [f] on all terms generalizing [query].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
   val iter_generalize :
-    (Internal_term.t -> 'a -> unit) -> 'a t -> Internal_term.t -> unit
+    (internal_term -> 'a -> unit) -> 'a t -> internal_term -> unit
 
   module Internal_for_tests : sig
     type subst
 
     val pp_subst : subst Fmt.t
 
-    val of_term : 'a t -> term -> Internal_term.t
+    val of_term : 'a t -> term -> internal_term
 
     val check_invariants : 'a t -> bool
   end
@@ -129,8 +120,7 @@ module Make
     (P : Intf.Signature)
     (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
     (S : Intf.Subst with type term = T.t) :
-  S with type term = T.t and type Internal_term.prim = P.t and type subst = S.t =
-struct
+  S with type term = T.t and type prim = P.t and type subst = S.t = struct
   open IRef
 
   type term = T.t
@@ -294,9 +284,13 @@ struct
 
   let get_subst = Internal_term.get_subst
 
-  type iref = Internal_term.t
+  let map = Internal_term.map
 
-  type isubst = (iref * Internal_term.t) list
+  let pp_internal_term = Internal_term.pp
+
+  type iref = internal_term
+
+  type isubst = (iref * internal_term) list
 
   type 'a node =
     { mutable head : isubst;
@@ -306,7 +300,7 @@ struct
 
   type 'a t =
     { nodes : 'a node Vec.vector;  (** [nodes] is the first layer of trees *)
-      root : Internal_term.t;
+      root : internal_term;
           (** [root] is set to [IVar] outside of insertion or lookup operations.
               It is set to the term being inserted or the query term otherwise. *)
       var_table : Internal_term.var_table
@@ -389,7 +383,7 @@ struct
      Pre-condition: [subst_term] contains no [IVar]
      Post-condition: generalized sub-terms of [node_term] are set to [Internal_term.IVar] and
      appear in the domain of both [residual_subst] and [residual_node] *)
-  let rec mscg (subst_term : Internal_term.t) (node_term : Internal_term.t)
+  let rec mscg (subst_term : internal_term) (node_term : internal_term)
       (residual_subst : isubst) (residual_node : isubst) : isubst * isubst =
     match (!subst_term, !node_term) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
@@ -418,7 +412,7 @@ struct
         (* [node_term] is already the mscg *)
         ((node_term, subst_term) :: residual_subst, residual_node)
 
-  let top_symbol_disagree (t1 : Internal_term.t) (t2 : Internal_term.t) =
+  let top_symbol_disagree (t1 : internal_term) (t2 : internal_term) =
     match (!t1, !t2) with
     | (Prim (prim1, _), Prim (prim2, _)) -> not (P.equal prim1 prim2)
     | (Var (v1, _), Var (v2, _)) -> not (Int.equal v1 v2)
@@ -614,7 +608,7 @@ struct
 
     let pp_subst = pp_subst
 
-    exception Not_well_scoped of Internal_term.t * Int_set.t
+    exception Not_well_scoped of internal_term * Int_set.t
 
     exception Not_properly_unset
 
@@ -663,7 +657,7 @@ struct
   let insert term data tree =
     update (Internal_term.of_term tree.var_table term) (fun _ -> data) tree
 
-  let rec iter_node f node (root : Internal_term.t) =
+  let rec iter_node f node (root : internal_term) =
     let subst = node.head in
     List.iter (fun (v, t) -> v := !t) subst ;
     (match node.data with None -> () | Some data -> f root data) ;
@@ -678,8 +672,7 @@ struct
    *)
 
   module Unifiable_query = struct
-    let rec unify undo_stack (term1 : Internal_term.t) (term2 : Internal_term.t)
-        =
+    let rec unify undo_stack (term1 : internal_term) (term2 : internal_term) =
       match (!term1, !term2) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then unify_arrays undo_stack args1 args2 0
@@ -801,8 +794,8 @@ struct
   end
 
   module Specialize_query = struct
-    let rec check_specialize undo_stack (term1 : Internal_term.t)
-        (term2 : Internal_term.t) =
+    let rec check_specialize undo_stack (term1 : internal_term)
+        (term2 : internal_term) =
       match (!term1, !term2) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
@@ -872,8 +865,8 @@ struct
   end
 
   module Generalize_query = struct
-    let rec check_generalize undo_stack (term1 : Internal_term.t)
-        (term2 : Internal_term.t) =
+    let rec check_generalize undo_stack (term1 : internal_term)
+        (term2 : internal_term) =
       match (!term1, !term2) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
@@ -961,8 +954,7 @@ struct
     else () ;
     List.iter (fun (v, d) -> v := d) undo_stack
 
-  let iter_query f (index : 'a t) (qkind : query_kind) (query : Internal_term.t)
-      =
+  let iter_query f (index : 'a t) (qkind : query_kind) (query : internal_term) =
     index.root := !query ;
     Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
     index.root := IVar
