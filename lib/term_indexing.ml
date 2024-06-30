@@ -6,19 +6,26 @@ module Term = Term
 module Term_index = Term_index
 module Slow_index = Slow_index
 
+(** [Make(P)] takes a {{!Term_indexing.Intf.Signature}[signature]} as input and returns
+    a module packing the main features of the library. *)
 module Make (P : Intf.Signature) : sig
+  (** First-order terms. *)
   module Term : Intf.Term with type prim = P.t
 
+  (** Paths in first-order terms. *)
   module Path : module type of Path
 
+  (** Patterns over first-order terms and pattern matching. *)
   module Pattern :
     Intf.Pattern
       with type prim = P.t
        and type path = Path.t
        and type term = Term.t
 
+  (** Substitutions. *)
   module Subst : Intf.Subst with type term = Term.t
 
+  (** Term indexing. *)
   module Index :
     Term_index.S
       with type prim = P.t

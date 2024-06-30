@@ -95,4 +95,23 @@ let expression = add (float 1.0) (add (float 2.0) (mul (float 3.0) (float 4.0)))
 
 let normalized = rewrite_until_fixpoint expression
 
+(* Example: substitution *)
+
+(* Note that the domain of the substitution does not need to match the variables contained
+   in the term. *)
+let subst =
+  [(0, float 0.0); (1, neg (float 42.0)); (2, float 2.0)]
+  |> List.to_seq |> Subst.of_seq
+
+let () =
+  assert (Option.equal Term.equal (Subst.eval 0 subst) (Some (float 0.0)))
+
+let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)
+
+let term = add (var 1) (mul (var 2) (var 3))
+
+let substituted = Subst.lift subst term
+
+let () = Format.printf "%a@." Term.pp substituted
+
 (* Example: indexing *)
