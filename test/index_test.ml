@@ -383,7 +383,7 @@ module Overlapping_vars_test = struct
   module I = Index2_raw
 
   let internal_to_native internal_term =
-    I.map
+    I.reduce
       (fun prim args ->
         match (prim, args) with
         | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)

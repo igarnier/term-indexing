@@ -108,10 +108,31 @@ let () =
 
 let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)
 
-let term = add (var 1) (mul (var 2) (var 3))
+let term = add (var 1) (mul (var 2) (var 2))
 
 let substituted = Subst.lift subst term
 
 let () = Format.printf "%a@." Term.pp substituted
 
+(* Example: unification *)
+
+let uf_state = Subst.Unification.empty ()
+
+let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
+
+let t2 = add (var 2) (mul (float 3.0) (float 4.0))
+
+let () =
+  match Subst.Unification.unify t1 t2 uf_state with
+  | None -> failwith "unification failed"
+  | Some uf_state' ->
+      let subst = Subst.Unification.subst uf_state' in
+      Format.printf "%a@." Subst.pp subst
+
+let () = Format.printf "%a@." Subst.pp subst
+
+let t3 = add (var 1) (mul (float 3.0) (float 4.0))
+
 (* Example: indexing *)
+
+let index = Index.create ()

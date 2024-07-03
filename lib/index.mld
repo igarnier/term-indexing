@@ -229,7 +229,7 @@ let subst =
 
 The terms associated to each variable in the domain of a substitution can be
 obtained through {{!Term_indexing.Intf.Subst.eval}[Subst.eval]}
-({{!Term_indexing.Intf.Subst.eval_exn}[Subst.eval_exn]} for the raising variant).
+(or {{!Term_indexing.Intf.Subst.eval_exn}[Subst.eval_exn]} for the raising variant).
 
 {[
 let () =
@@ -239,28 +239,79 @@ let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)
 ]}
 
 One can also apply a substitution to the variables contained in a term using
-({{!Term_indexing.Intf.Subst.lift}[Subst.lift]}.
+{{!Term_indexing.Intf.Subst.lift}[Subst.lift]}.
 
 {[
-let term = add (var 1) (mul (var 2) (var 3))
+let term = add (var 1) (mul (var 2) (var 2))
 
 let substituted = Subst.lift subst term
 ]}
-[substituted] is equal to
+The value [substituted] is equal to:
 {v
-Add(Neg(42.0), Mul(2.0, V(3)))
+Add(Neg(42.0), Mul(2.0, 2.0))
 v}
 
-Applying a substitution to a term intuitively "refines" it. More formally, it defines a partial order on
-terms where [Subst.lift subst term] is below [term].
+{1 Intermezzo: the refinement partial order on terms}
 
-TODO: unification
+Applying a substitution to a term intuitively "refines" it. More formally, one can
+define a preorder {m \le} on terms where a term {m t_1 \le t_2} if there exists
+a substitution {m \sigma} such that {m t_1 = \sigma(t_2)}. The maximal elements of
+this partial order are variables, and the minimal elements are ground terms (i.e.
+terms without variables). (This is a preorder and not a partial order because terms
+equal modulo variable renaming generalize each other).
+
+Here is an increasing sequence of terms in the preorder {m \le}:
+{ul
+  {- the term [t1 = add (float 2.0) (float 2.0)] is ground}
+  {- the term [t1] refines [t2 = add (var 1) (var 1)] via the substitution {m 1 \mapsto}
+     [float 2.0]}
+  {- the term [t2] refines [t3 = add (var 1) (var 2)] via the substitution {m 2 \mapsto}
+     [var 1]}
+  {- the term [t3] refines [var 3] via the substitution {m 3 \mapsto} [t3]}}
+
+{1 Unification}
+
+Some pairs of terms {m t_1, t_2} admit a common refinement. Formally, a {e unifier} of {m t_1}
+and {m t_2} is a substitution which equates the two terms. A unification problem is
+a conjunction of equations between terms and a solution is a substitution which when applied to
+all terms satisfies all equations.
+
+The library provides a module to compute such solutions. Unification proceeds on a state
+that allows to accumulate equations. Let us create an empty state.
+
+{[
+let uf_state = Subst.Unification.empty ()
+]}
+
+One can unify terms using {{!Term_indexing.Intf.Subst.Unification.unify}[Subst.Unification.unify]}.
+This function returns [None] when no unifier can be found, or an updated state in the other case.
+At any point, we can get a solution from the state using
+{{!Term_indexing.Intf.Subst.Unification.subst}[Subst.Unification.subst]} which returns a substitution.
+
+{[
+let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
+
+let t2 = add (var 2) (mul (float 3.0) (float 4.0))
+
+let () =
+  match Subst.Unification.unify t1 t2 uf_state with
+  | None -> failwith "unification failed"
+  | Some uf_state' ->
+      let subst = Subst.Unification.subst uf_state' in
+      Format.printf "%a@." Subst.pp subst
+]}
+
+{v
+V(1) -> Mul(3.0, 4.0); V(2) -> Mul(1.0, 2.0)
+v}
 
 {1 Indexing}
 
-When there exists a substitution [subst] [Subst.lift subst term]
+One sometimes need to associate data to terms. In those case, one may simply use a hash table.
+However, the preorder structure on terms suggests a richer API:
+{ul
+ {- finding all term-value pairs unifiable with the query term}
+ {- finding all term-value pairs generalizing the query term}
+ {- finding all term-value pairs specializing the query term}}
 
-Terms are partially ordered
-
-One sometimes need to associate data to terms. If the structure of terms is irrelevant to the problem at hand,
-one can simply use a hash table. However, one sometimes want to take advantage o
+The module

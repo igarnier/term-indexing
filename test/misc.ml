@@ -186,7 +186,7 @@ module Stub () = struct
   let of_term = I.Internal_for_tests.of_term index
 
   let internal_to_native internal_term =
-    I.map
+    I.reduce
       (fun prim args ->
         match (prim, args) with
         | (Prim.Add, [| lhs; rhs |]) -> Add (lhs, rhs)

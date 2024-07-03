@@ -25,11 +25,19 @@ module type S = sig
   (** [is_cyclic term] checks whether a term contains a cycle or not. *)
   val is_cyclic : internal_term -> bool
 
+  (** [to_term term] creates a new term representing the internal term [term].
+
+      @raise Invalid_argument if [term] contains a cycle. *)
   val to_term : internal_term -> term
 
+  (** [get_subst term] extracts a substitution out of [term] *)
   val get_subst : internal_term -> subst
 
-  val map :
+  (** [reduce fprim fvar term] reduces [term] by recursively
+      applying [fprim] on primitives applications and [fvar] on variables.
+      If the variable is associated to a term in a substitution, the term is
+      passed to [fvar] as [Some term]. *)
+  val reduce :
     (prim -> 'a array -> 'a) ->
     (var -> internal_term option -> 'a) ->
     internal_term ->
@@ -47,7 +55,13 @@ module type S = sig
   (** [create ()] creates an empty index. *)
   val create : unit -> 'a t
 
+  (** [insert term v index] associates the value [v] to [term] in [index] *)
   val insert : term -> 'a -> 'a t -> unit
+
+  (** [update term f index] associates the value [f None] to [term] if
+      [term] is not already in [index], or [f (Some v)] if [v] is already
+      bound to [term]. *)
+  val update : term -> ('a option -> 'a) -> 'a t -> unit
 
   (** [iter f index] iterates [f] on all bindings of [index].
       Note that the lifetime of the [internal_term] passed to [f] ends
@@ -194,7 +208,7 @@ module Make
 
     let prim p subterms = ref (Prim (p, subterms))
 
-    let map fprim fvar term =
+    let reduce fprim fvar term =
       let rec loop fprim fvar visited term =
         match !term with
         | Prim (prim, subterms) ->
@@ -245,7 +259,7 @@ module Make
       let rec to_term : IS.t -> t -> T.t =
        fun set term ->
         let set =
-          if IS.mem (uid term) set then failwith "cyclic term"
+          if IS.mem (uid term) set then invalid_arg "cyclic term"
           else IS.add (uid term) set
         in
         match !term with
@@ -253,7 +267,9 @@ module Make
         | Prim (p, subtrees) ->
             let subtrees = Array.map (to_term set) subtrees in
             T.prim p subtrees
-        | IVar -> failwith "to_term: encountered an internal variable"
+        | IVar ->
+            (* to_term: encountered an internal variable *)
+            assert false
       in
       to_term IS.empty term
 
@@ -283,7 +299,7 @@ module Make
 
   let get_subst = Internal_term.get_subst
 
-  let map = Internal_term.map
+  let reduce = Internal_term.reduce
 
   let pp_internal_term = Internal_term.pp
 
@@ -655,6 +671,9 @@ module Make
 
   let insert term data tree =
     update (Internal_term.of_term tree.var_table term) (fun _ -> data) tree
+
+  let update term f tree =
+    update (Internal_term.of_term tree.var_table term) f tree
 
   let rec iter_node f node (root : internal_term) =
     let subst = node.head in
