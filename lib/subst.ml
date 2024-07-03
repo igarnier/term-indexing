@@ -73,7 +73,7 @@ module Make
       let repr = Uf.Map_based.find uf var in
       eval repr subst
 
-    let rec unify (term1 : term) (term2 : term) (state : state) =
+    let rec unify_exn (term1 : term) (term2 : term) (state : state) =
       if T.equal term1 term2 then state
       else
         match (term1.Hashcons.node, term2.Hashcons.node) with
@@ -94,25 +94,28 @@ module Make
                 let subst = add vrepr repr state.subst in
                 { uf; subst }
             | (Some repr1, Some repr2) ->
-                let state = unify repr1 repr2 { state with uf } in
+                let state = unify_exn repr1 repr2 { state with uf } in
                 { state with uf })
         | (Term.Var v, Term.Prim _) -> (
             let repr_opt = get_repr v state in
             match repr_opt with
             | None -> { state with subst = add v term2 state.subst }
-            | Some repr -> unify repr term2 state)
+            | Some repr -> unify_exn repr term2 state)
         | (Term.Prim _, Term.Var v) -> (
             let repr_opt = get_repr v state in
             match repr_opt with
             | None -> { state with subst = add v term1 state.subst }
-            | Some repr -> unify term1 repr state)
+            | Some repr -> unify_exn term1 repr state)
 
     and unify_subterms subterms1 subterms2 (state : state) i =
       if i = Array.length subterms1 then state
       else
         let t1 = subterms1.(i) and t2 = subterms2.(i) in
-        let state = unify t1 t2 state in
+        let state = unify_exn t1 t2 state in
         unify_subterms subterms1 subterms2 state (i + 1)
+
+    let unify term1 term2 state =
+      try Some (unify_exn term1 term2 state) with Cannot_unify -> None
 
     let rec generalize (term1 : term) (term2 : term)
         (table : (int, term) Hashtbl.t) =
@@ -144,7 +147,7 @@ module Make
       in
       generalize term1 term2 (Hashtbl.create (2 * ub))
 
-    let unify_subst (subst : t) (state : state) =
+    let unify_subst_exn (subst : t) (state : state) =
       Seq.fold_left
         (fun state (v, t) ->
           let repr_opt = get_repr v state in
@@ -152,8 +155,11 @@ module Make
           | None -> { state with subst = add v t state.subst }
           | Some repr ->
               let state = { state with subst = add v t state.subst } in
-              unify repr t state)
+              unify_exn repr t state)
         state
         (M.to_seq subst)
+
+    let unify_subst (subst : t) (state : state) =
+      try Some (unify_subst_exn subst state) with Cannot_unify -> None
   end
 end

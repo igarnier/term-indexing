@@ -32,10 +32,7 @@ struct
     let open S.Unification in
     M.iter
       (fun t v ->
-        try
-          ignore (unify query t (empty ())) ;
-          f t v
-        with S.Unification.Cannot_unify -> ())
+        match unify query t (empty ()) with None -> () | Some _ -> f t v)
       !index
 
   let iter_generalize f index query =

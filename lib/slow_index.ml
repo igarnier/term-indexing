@@ -410,8 +410,8 @@ module Make
     Vec.iter
       (fun { head; subtrees; data } ->
         match S.Unification.unify_subst head uf_state with
-        | exception S.Unification.Cannot_unify -> ()
-        | uf_state ->
+        | None -> ()
+        | Some uf_state ->
             let subst = S.Unification.subst uf_state in
             (match data with
             | None -> ()
@@ -425,7 +425,7 @@ module Make
     let (_, query) = T.canon query (gen_query_variable ()) in
     let query_subst = S.of_seq (Seq.return (indicator 0, query)) in
     let state =
-      S.Unification.unify_subst query_subst (S.Unification.empty ())
+      S.Unification.unify_subst_exn query_subst (S.Unification.empty ())
     in
     iter_unifiable_node f root.nodes state
 
@@ -449,8 +449,8 @@ module Make
     Vec.iter
       (fun { head; subtrees; data } ->
         match S.Unification.unify_subst head uf_state with
-        | exception S.Unification.Cannot_unify -> ()
-        | uf_state ->
+        | None -> ()
+        | Some uf_state ->
             let subst = S.Unification.subst uf_state in
             let term = S.eval_exn (indicator 0) subst |> S.lift subst in
             if S.Unification.generalize query term then (

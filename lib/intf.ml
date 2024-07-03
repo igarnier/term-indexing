@@ -287,14 +287,22 @@ module type Subst = sig
     val empty : unit -> state
 
     (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
+        an updated {!state}. *)
+    val unify : term -> term -> state -> state option
+
+    (** [unify_exn t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
         an updated {!state}.
 
         @raise Cannot_unify if no solution was found. *)
-    val unify : term -> term -> state -> state
+    val unify_exn : term -> term -> state -> state
 
     (** [unify_subst s state] unifies [s] with substitution state [state]
         and returns an updated {!state}. *)
-    val unify_subst : t -> state -> state
+    val unify_subst : t -> state -> state option
+
+    (** [unify_subst s1 s2 state] unifies [s1] with [s2] in state [state]
+        and returns an updated {!state}. *)
+    val unify_subst_exn : t -> state -> state
 
     (** [generalize t1 t2] checks that there exists a substitution [subst]
         such that [lift t1 subst = t2]. *)

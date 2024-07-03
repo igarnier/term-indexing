@@ -59,7 +59,7 @@ module Unification = struct
 
   let unify t0 t1 =
     let state = U.empty () in
-    try U.unify t0 t1 state
+    try U.unify_exn t0 t1 state
     with U.Cannot_unify ->
       QCheck.Test.fail_reportf
         "could not unify:@.t0: %a@.t1: %a@."
@@ -71,7 +71,7 @@ module Unification = struct
   let fail_unify t0 t1 =
     let state = U.empty () in
     try
-      ignore (U.unify t0 t1 state) ;
+      ignore (U.unify_exn t0 t1 state) ;
       QCheck.Test.fail_reportf
         "didn't expect to unify:@.t0: %a@.t1: %a@."
         Expr.pp
@@ -83,7 +83,7 @@ module Unification = struct
   let unify_expect ~expected t0 t1 =
     let state = U.empty () in
     try
-      let state = U.unify t0 t1 state in
+      let state = U.unify_exn t0 t1 state in
       if not (alpha_eq (Subst.lift (U.subst state) t0) expected) then
         QCheck.Test.fail_reportf "expected: %a, got %a@." Expr.pp t0 Expr.pp t1
       else ()
@@ -121,11 +121,11 @@ module Unification = struct
   let unification_case_2 =
     Alcotest.test_case "unification-case-2" `Quick (fun () ->
         let state = U.empty () in
-        let state = U.unify (var 0) (var 1) state in
-        let state = U.unify (var 1) (var 2) state in
-        let state = U.unify (var 0) (float 1.0) state in
+        let state = U.unify_exn (var 0) (var 1) state in
+        let state = U.unify_exn (var 1) (var 2) state in
+        let state = U.unify_exn (var 0) (float 1.0) state in
         try
-          let _state = U.unify (var 2) (float 2.0) state in
+          let _state = U.unify_exn (var 2) (float 2.0) state in
           Alcotest.fail "unification-case-2: expected failure"
         with U.Cannot_unify -> ())
 
