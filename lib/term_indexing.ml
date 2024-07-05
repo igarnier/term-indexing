@@ -27,7 +27,7 @@ module Make (P : Intf.Signature) : sig
 
   (** Term indexing. *)
   module Index :
-    Term_index.S
+    Intf.Term_index
       with type prim = P.t
        and type term = Term.t
        and type subst = Subst.t

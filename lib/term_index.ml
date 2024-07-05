@@ -1,99 +1,5 @@
 module Vec = Containers.Vector
 
-module type S = sig
-  (** [prim] is the type of primitive symbols used in terms. *)
-  type prim
-
-  (** [term] is the type of first-order terms. *)
-  type term
-
-  (** [subst] is the type of substitutions, i.e. finite functions from variables to {!term}. *)
-  type subst
-
-  type var := int
-
-  (** [internal_term] is the internal representation of terms in the index.
-
-      Due to the details of the implementation, it might be the case that
-      the result of querying the index is a term containing cycle. This might
-      occur if for instance the querying term contains variables overlapping
-      the terms contained in the index.
-
-      The type [internal_term] is also used to represent substitutions. *)
-  type internal_term
-
-  (** [is_cyclic term] checks whether a term contains a cycle or not. *)
-  val is_cyclic : internal_term -> bool
-
-  (** [to_term term] creates a new term representing the internal term [term].
-
-      @raise Invalid_argument if [term] contains a cycle. *)
-  val to_term : internal_term -> term
-
-  (** [get_subst term] extracts a substitution out of [term] *)
-  val get_subst : internal_term -> subst
-
-  (** [reduce fprim fvar term] reduces [term] by recursively
-      applying [fprim] on primitives applications and [fvar] on variables.
-      If the variable is associated to a term in a substitution, the term is
-      passed to [fvar] as [Some term]. *)
-  val reduce :
-    (prim -> 'a array -> 'a) ->
-    (var -> internal_term option -> 'a) ->
-    internal_term ->
-    'a
-
-  val pp_internal_term : internal_term Fmt.t
-
-  (** ['a t] is the type of term indexes mapping terms to values of type ['a]. *)
-  type 'a t
-
-  (** [pp pp_val] allows to pretty-print values of type ['a t] given [pp_val], a
-      pretty-printer for values of type ['a]. *)
-  val pp : 'a Fmt.t -> 'a t Fmt.t
-
-  (** [create ()] creates an empty index. *)
-  val create : unit -> 'a t
-
-  (** [insert term v index] associates the value [v] to [term] in [index] *)
-  val insert : term -> 'a -> 'a t -> unit
-
-  (** [update term f index] associates the value [f None] to [term] if
-      [term] is not already in [index], or [f (Some v)] if [v] is already
-      bound to [term]. *)
-  val update : term -> ('a option -> 'a) -> 'a t -> unit
-
-  (** [iter f index] iterates [f] on all bindings of [index].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter : (internal_term -> 'a -> unit) -> 'a t -> unit
-
-  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter_unifiable : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
-
-  (** [iter_specialize f index query] applies [f] on all terms specializing [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter_specialize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
-
-  (** [iter_generalize f index query] applies [f] on all terms generalizing [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter_generalize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
-
-  module Internal_for_tests : sig
-    type subst
-
-    val pp_subst : subst Fmt.t
-
-    val of_term : 'a t -> term -> internal_term
-
-    val check_invariants : 'a t -> bool
-  end
-end
-
 (* References equipped with unique integers for debugging/printing purposes *)
 module IRef : sig
   type 'a iref
@@ -132,8 +38,23 @@ end
 module Make
     (P : Intf.Signature)
     (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
-    (S : Intf.Subst with type term = T.t) :
-  S with type term = T.t and type prim = P.t and type subst = S.t = struct
+    (S : Intf.Subst with type term = T.t) : sig
+  include
+    Intf.Term_index
+      with type term = T.t
+       and type prim = P.t
+       and type subst = S.t
+
+  module Internal_for_tests : sig
+    type subst
+
+    val pp_subst : subst Fmt.t
+
+    val of_term : 'a t -> term -> internal_term
+
+    val check_invariants : 'a t -> bool
+  end
+end = struct
   open IRef
 
   type term = T.t

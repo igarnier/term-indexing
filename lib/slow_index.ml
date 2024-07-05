@@ -1,5 +1,46 @@
+(** The module type of substitution trees *)
+module type Term_index = sig
+  (** The type of substitutions *)
+  type subst
+
+  (** The type of terms, which act as keys of substitution trees *)
+  type term
+
+  (** The type of substitution trees with values of type ['a] *)
+  type 'a t
+
+  val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
+
+  val create : unit -> 'a t
+
+  (** [update term f index] modifies the binding associated to [term] in [index].
+      If a value [v] is already bound to [term] in [index], this value is replaced by [f (Some v)].
+      In the other case, the value [f None] is bound to [term]. *)
+  val update : term -> ('a option -> 'a) -> 'a t -> term
+
+  (** [insert term data index] adds a mapping from a canonicalized version of [term] to [data] in [index],
+      and returns the canonicalized term. If an existing binding to [term] already exists,
+      it is overwritten. *)
+  val insert : term -> 'a -> 'a t -> term
+
+  (** [iter f index] iterates [f] on the bindings of [index]. *)
+  val iter : (term -> 'a -> unit) -> 'a t -> unit
+
+  (** [iter_unifiable f index query] iterates [f] on all bindings contained in [index]
+      whose keys are unifiable with [query]. *)
+  val iter_unifiable : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  (** [iter_generalize f index query] iterates [f] on all bindings contained in [index]
+      whose keys generalize [query]. *)
+  val iter_generalize : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  (** [iter_specialize f index query] iterates [f] on all bindings contained in [index]
+      whose keys specialize [query]. *)
+  val iter_specialize : (term -> 'a -> unit) -> 'a t -> term -> unit
+end
+
 module type S = sig
-  include Intf.Term_index
+  include Term_index
 
   module Internal_for_tests : sig
     val indicator : int -> int

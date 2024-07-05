@@ -131,8 +131,30 @@ let () =
 
 let () = Format.printf "%a@." Subst.pp subst
 
-let t3 = add (var 1) (mul (float 3.0) (float 4.0))
-
 (* Example: indexing *)
 
+let keys =
+  [ float 42.0;
+    add (float 1.0) (float 2.0);
+    add (var 1) (mul (float 2.0) (float 3.0));
+    mul (float 1.0) (mul (var 2) (float 4.0));
+    neg (neg (add (float 1.0) (var 3)));
+    neg (neg (float 1.0));
+    neg (float 1.0) ]
+
 let index = Index.create ()
+
+let () = List.iteri (fun key i -> Index.insert key i index) keys
+
+let () =
+  Index.iter
+    (fun key _ -> Format.printf "%a@." Term.pp (Index.to_term key))
+    index
+
+let () = Format.printf "Unifiable@."
+
+let () =
+  Index.iter_unifiable
+    (fun key _ -> Format.printf "%a@." Term.pp (Index.to_term key))
+    index
+    (neg (neg (var 0)))
