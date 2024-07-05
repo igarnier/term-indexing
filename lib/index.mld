@@ -48,7 +48,7 @@ module Prim : Intf.Signature with type t = prim = struct
 end
 ]}
 
-The functor {{!Term_indexing.Make}} packs all features of the library under a single functor taking
+The functor {!Term_indexing.Make} packs all features of the library under a single functor taking
 an argument of type {{!Term_indexing.Intf.Signature}[Intf.Signature]}.
 
 {[
@@ -60,11 +60,11 @@ The module [Term] contained in [Pack] provides operations to create
 and manipulate {e hash-consed} terms over the given signature (see {{!Term_indexing.Intf.Term}[Intf.Term]}).
 Hash-consing is a technique that ensures that terms are allocated at most once: it is guaranteed that
 structurally equal terms are physically equal. Terms are constructed using the functions
-{{!Term_indexing.Intf.Term.prim}[Term.prim]} for primitive applications and
+{{!Term_indexing.Intf.Term.val-prim}[Term.prim]} for primitive applications and
 {{!Term_indexing.Intf.Term.val-var}[Term.var]} for variables.
 
 Let us define some convenient wrappers to create terms. Note that the correctness
-of arities is dynamically checked by {{!Term_indexing.Intf.Term.prim}[Term.prim]}.
+of arities is dynamically checked by {{!Term_indexing.Intf.Term.val-prim}[Term.prim]}.
 
 {[
 let add x y = Term.prim Add [| x; y |]
@@ -251,12 +251,12 @@ The value [substituted] is equal to:
 Add(Neg(42.0), Mul(2.0, 2.0))
 v}
 
-{1 Intermezzo: the refinement partial order on terms}
+{1 Intermezzo: the refinement preorder on terms}
 
 Applying a substitution to a term intuitively "refines" it. More formally, one can
 define a preorder {m \le} on terms where a term {m t_1 \le t_2} if there exists
-a substitution {m \sigma} such that {m t_1 = \sigma(t_2)}. The maximal elements of
-this partial order are variables, and the minimal elements are ground terms (i.e.
+a substitution {m \sigma} such that {m t_1 = \sigma(t_2)}. The maximal (equivalence class of) elements of
+this preorder are variables, and the minimal elements are ground terms (i.e.
 terms without variables). (This is a preorder and not a partial order because terms
 equal modulo variable renaming generalize each other).
 
@@ -308,10 +308,83 @@ v}
 {1 Indexing}
 
 One sometimes need to associate data to terms. In those case, one may simply use a hash table.
-However, the preorder structure on terms suggests a richer API:
+However, the preorder structure on terms suggests the possibility to perform richer queries:
 {ul
  {- finding all term-value pairs unifiable with the query term}
  {- finding all term-value pairs generalizing the query term}
  {- finding all term-value pairs specializing the query term}}
 
-The module
+The module {{!Term_indexing.Intf.Term_index}[Index]} allows to associate terms to data and perform these
+queries. In the example, we use dummy integers as data.
+
+An empty index is created using {{!Term_indexing.Intf.Term_index.create}[Index.create]}.
+{[
+let index = Index.create ()
+]}
+
+Keys-value mappings are inserted using {{!Term_indexing.Intf.Term_index.insert}[Index.insert]}.
+Inserting a value at a given key overwrites the previous value, if any. One can also use
+{{!Term_indexing.Intf.Term_index.update}[Index.update]} to access the previous value.
+
+{[
+let keys =
+  [ float 42.0;
+    add (float 1.0) (float 2.0);
+    add (var 1) (mul (float 2.0) (float 3.0));
+    mul (float 1.0) (mul (var 2) (float 4.0));
+    neg (neg (add (float 1.0) (var 3)));
+    neg (neg (float 1.0));
+    neg (float 1.0) ]
+
+let () = List.iteri (fun key -> Index.insert key i index) keys
+]}
+
+The worst-case complexity of insertion is linear. In practice complexity
+depends heavily on term distribution. One can iterate on all terms
+stored in the index using {{!Term_indexing.Intf.Term_index.iter}[Index.iter]}
+{[
+let () =
+  Index.iter
+    (fun key v -> Format.printf "%a -> %d@." Term.pp key v)
+    index
+]}
+Note that the iteration order is not the insertion one:
+{v
+Add(Mul(V(1), 2.0), 2.0) -> 1
+Add(V(1), Mul(2.0, 3.0)) -> 6
+Mul(1.0, Mul(V(2), 4.0)) -> 2
+Neg(Neg(Add(1.0, V(3)))) -> 3
+Neg(Neg(1.0)) -> 4
+Neg(1.0) -> 5
+v}
+One can ask for all terms unifiable with a query term, using
+{{!Term_indexing.Intf.Term_index.iter_unifiable}[Index.iter_unifiable]}:
+{[
+let query = add (mul (float 3.0) (var 0)) (var 2)
+
+let () =
+  Index.iter_unifiable
+    (fun key v -> Format.printf "%a -> %d@." Term.pp key)
+    index
+    query
+]}
+
+{v
+Add(Mul(V(1), 2.0), 2.0)
+Add(V(1), Mul(2.0, 3.0))
+v}
+
+Note that there are no terms in [keys] that specialize nor generalize [query].
+However we can try to find all terms specializing [neg (var 0)]:
+{v
+Neg(Neg(Add(1.0, V(3))))
+Neg(Neg(1.0))
+Neg(1.0)
+v}
+Similarly, we may look for all terms generalizing [neg (neg (add (float 1.0) (float 2.0)))].
+There's a single one:
+{v
+Neg(Neg(Add(1.0, V(3))))
+v}
+
+Happy hacking!

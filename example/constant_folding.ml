@@ -135,23 +135,58 @@ let () = Format.printf "%a@." Subst.pp subst
 
 let keys =
   [ float 42.0;
-    add (float 1.0) (float 2.0);
-    add (var 1) (mul (float 2.0) (float 3.0));
+    add (mul (var 1) (float 2.0)) (float 2.0);
     mul (float 1.0) (mul (var 2) (float 4.0));
     neg (neg (add (float 1.0) (var 3)));
     neg (neg (float 1.0));
-    neg (float 1.0) ]
+    neg (float 1.0);
+    add (var 1) (mul (float 2.0) (float 3.0)) ]
 
 let index = Index.create ()
 
 let () = List.iteri (fun i key -> Index.insert key i index) keys
 
-let () = Index.iter (fun key _ -> Format.printf "%a@." Term.pp key) index
+let () =
+  Index.iter (fun key v -> Format.printf "%a -> %d@." Term.pp key v) index
 
-let () = Format.printf "Unifiable@."
+let query = add (mul (float 3.0) (var 0)) (var 2)
+
+let () = Format.printf "unifiable@."
 
 let () =
   Index.iter_unifiable
     (fun key _ -> Format.printf "%a@." Term.pp key)
     index
-    (neg (neg (var 0)))
+    query
+
+let () = Format.printf "specialize@."
+
+let () =
+  Index.iter_specialize
+    (fun key _ -> Format.printf "%a@." Term.pp key)
+    index
+    query
+
+let () = Format.printf "generalize@."
+
+let () =
+  Index.iter_generalize
+    (fun key _ -> Format.printf "%a@." Term.pp key)
+    index
+    query
+
+let query = neg (var 0)
+
+let () =
+  Index.iter_specialize
+    (fun key _ -> Format.printf "%a@." Term.pp key)
+    index
+    query
+
+let query = neg (neg (add (float 1.0) (float 2.0)))
+
+let () =
+  Index.iter_generalize
+    (fun key _ -> Format.printf "%a@." Term.pp key)
+    index
+    query
