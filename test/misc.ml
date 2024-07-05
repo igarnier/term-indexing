@@ -26,8 +26,7 @@ module Stub () = struct
 
   let () = Format.printf "three@.%a@." (I.pp Fmt.int) index
 
-  let () =
-    I.iter (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v) index
+  let () = I.iter (fun k v -> Format.printf "%a -> %d@." Expr.pp k v) index
 
   (* iter-unifiable *)
 
@@ -35,7 +34,7 @@ module Stub () = struct
 
   (* let () = *)
   (*   I.iter_unifiable *)
-  (*     (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v) *)
+  (*     (fun k v -> Format.printf "%a -> %d@." Expr.pp k v) *)
   (*     index *)
   (*     (I.of_term index (add (var 0) (var 1))) *)
 
@@ -61,7 +60,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
       index
       (add (var 0) (var 1))
 
@@ -71,7 +70,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
       index
       (add (var 0) (var 0))
 
@@ -79,7 +78,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
       index
       (add (var 0) (var 1))
 
@@ -88,7 +87,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
       index
       (add (var 0) (var 0))
 
@@ -96,7 +95,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
       index
       (var 0)
 
@@ -113,7 +112,7 @@ module Stub () = struct
 
   let () =
     I.iter_generalize
-      (fun k v -> Format.printf "%a -> value=%d@." I.pp_internal_term k v)
+      (fun k v -> Format.printf "%a -> value=%d@." Expr.pp k v)
       index
       (add (var 2) (var 1))
 
@@ -148,14 +147,7 @@ module Stub () = struct
 
   let () =
     I.iter_generalize
-      (fun k v ->
-        Format.printf
-          "%a -> %a -> value=%d@."
-          I.pp_internal_term
-          k
-          Expr.pp
-          (I.to_term k)
-          v)
+      (fun k v -> Format.printf "%a -> %a -> value=%d@." Expr.pp k Expr.pp k v)
       index
       (add (var 1) (var 1))
 
@@ -202,7 +194,7 @@ module Stub () = struct
 
   let collect_unifiable query index =
     let acc = ref [] in
-    I.iter_unifiable
+    I.iter_unifiable_transient
       (fun term v -> acc := (internal_to_native term, v) :: !acc)
       index
       query ;
@@ -241,7 +233,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun term v -> Format.printf "found %a -> %d@." I.pp_internal_term term v)
+      (fun term v -> Format.printf "found %a -> %d@." Expr.pp term v)
       index
       (to_term (float 1.0))
 end

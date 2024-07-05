@@ -70,35 +70,10 @@ module Index : Index_signature = struct
   include Index_raw
 
   let insert f data index = ignore (insert f data index)
-
-  let iter_unifiable f index query = iter_unifiable f index query
-
-  let iter_generalize f index query = iter_generalize f index query
-
-  let iter_specialize f index query = iter_specialize f index query
 end
 
 module Index2_raw = Term_index.Make (Prim) (Expr) (Subst_mod)
-
-module Index2 = struct
-  include Index2_raw
-
-  type term = Expr.t
-
-  let iter f index = iter (fun iterm data -> f (to_term iterm) data) index
-
-  let iter_unifiable f index query =
-    iter_unifiable (fun iterm data -> f (to_term iterm) data) index query
-
-  let iter_generalize f index query =
-    iter_generalize (fun iterm data -> f (to_term iterm) data) index query
-
-  let iter_specialize f index query =
-    iter_specialize (fun iterm data -> f (to_term iterm) data) index query
-
-  let insert f data index = ignore (insert f data index)
-end
-
+module Index2 = Index2_raw
 module Reference = Naive_index.Make (Prim) (Expr) (Subst_mod)
 module Subst = Subst_mod
 

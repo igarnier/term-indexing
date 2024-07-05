@@ -145,4 +145,12 @@ module _ =
     end)
 
 module Index2 = Term_index.Make (Prim) (Expr) (Subst)
-module _ = Make_bench (Expr) (Index2)
+
+module _ =
+  Make_bench
+    (Expr)
+    (struct
+      include Index2
+
+      let iter = iter_transient
+    end)

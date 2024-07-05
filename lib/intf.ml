@@ -380,23 +380,42 @@ module type Term_index = sig
       bound to [term]. *)
   val update : term -> ('a option -> 'a) -> 'a t -> unit
 
-  (** [iter f index] iterates [f] on all bindings of [index].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter : (internal_term -> 'a -> unit) -> 'a t -> unit
+  (** [iter f index] iterates [f] on all bindings of [index]. *)
+  val iter : (term -> 'a -> unit) -> 'a t -> unit
 
-  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter_unifiable : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  (** [iter_unfiable f index query] applies [f] on all terms unifiable with [query]. *)
+  val iter_unifiable : (term -> 'a -> unit) -> 'a t -> term -> unit
 
-  (** [iter_specialize f index query] applies [f] on all terms specializing [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
-      when [f] returns. *)
-  val iter_specialize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  (** [iter_specialize f index query] applies [f] on all terms specializing [query]. *)
+  val iter_specialize : (term -> 'a -> unit) -> 'a t -> term -> unit
 
-  (** [iter_generalize f index query] applies [f] on all terms generalizing [query].
+  (** [iter_generalize f index query] applies [f] on all terms generalizing [query]. *)
+  val iter_generalize : (term -> 'a -> unit) -> 'a t -> term -> unit
+
+  (** The transient variants below are more efficient but must be used with care.
+      The lifetime of the [internal_term]s ends when each call to the closure
+      returns. Do not keep pointers to those [internal_term]s.  *)
+
+  (** [iter_transient f index] iterates [f] on all bindings of [index].
       Note that the lifetime of the [internal_term] passed to [f] ends
       when [f] returns. *)
-  val iter_generalize : (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  val iter_transient : (internal_term -> 'a -> unit) -> 'a t -> unit
+
+  (** [iter_unfiable_transient f index query] applies [f] on all terms unifiable with [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
+  val iter_unifiable_transient :
+    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+
+  (** [iter_specialize_transient f index query] applies [f] on all terms specializing [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
+  val iter_specialize_transient :
+    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+
+  (** [iter_generalize_transient f index query] applies [f] on all terms generalizing [query].
+      Note that the lifetime of the [internal_term] passed to [f] ends
+      when [f] returns. *)
+  val iter_generalize_transient :
+    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
 end

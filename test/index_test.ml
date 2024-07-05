@@ -399,7 +399,7 @@ module Overlapping_vars_test = struct
 
   let collect_unifiable query index =
     let acc = ref [] in
-    I.iter_unifiable
+    I.iter_unifiable_transient
       (fun term v ->
         (* if Index2.Internal_term.is_cyclic term then () *)
         (* else *)

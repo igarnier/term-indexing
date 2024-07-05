@@ -596,16 +596,6 @@ end = struct
   let update term f tree =
     update (Internal_term.of_term tree.var_table term) f tree
 
-  let rec iter_node f node (root : internal_term) =
-    let subst = node.head in
-    List.iter (fun (v, t) -> v := !t) subst ;
-    (match node.data with None -> () | Some data -> f root data) ;
-    Vec.iter (fun node -> iter_node f node root) node.subtrees ;
-    reset subst
-
-  let iter f (index : 'a t) =
-    Vec.iter (fun node -> iter_node f node index.root) index.nodes
-
   (*
      TODO: could implement substitutions as pair of vectors
    *)
@@ -853,6 +843,18 @@ end = struct
           else (undo_stack, false)
   end
 
+  let rec iter_node f node (root : internal_term) =
+    let subst = node.head in
+    List.iter (fun (v, t) -> v := !t) subst ;
+    (match node.data with None -> () | Some data -> f root data) ;
+    Vec.iter (fun node -> iter_node f node root) node.subtrees ;
+    reset subst
+
+  let iter_transient f (index : 'a t) =
+    Vec.iter (fun node -> iter_node f node index.root) index.nodes
+
+  let iter f index = iter_transient (fun term v -> f (to_term term) v) index
+
   type query_kind = Unifiable | Specialize | Generalize
 
   let _pp_query_kind fmtr = function
@@ -878,12 +880,21 @@ end = struct
     Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
     index.root := IVar
 
-  let iter_unifiable f index query =
+  let iter_unifiable_transient f index query =
     iter_query f index Unifiable (of_term index query)
 
-  let iter_specialize f index query =
+  let iter_unifiable f index =
+    iter_unifiable_transient (fun term v -> f (to_term term) v) index
+
+  let iter_specialize_transient f index query =
     iter_query f index Specialize (of_term index query)
 
-  let iter_generalize f index query =
+  let iter_specialize f index =
+    iter_specialize_transient (fun term v -> f (to_term term) v) index
+
+  let iter_generalize_transient f index query =
     iter_query f index Generalize (of_term index query)
+
+  let iter_generalize f index =
+    iter_generalize_transient (fun term v -> f (to_term term) v) index
 end

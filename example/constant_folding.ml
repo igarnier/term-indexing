@@ -144,17 +144,14 @@ let keys =
 
 let index = Index.create ()
 
-let () = List.iteri (fun key i -> Index.insert key i index) keys
+let () = List.iteri (fun i key -> Index.insert key i index) keys
 
-let () =
-  Index.iter
-    (fun key _ -> Format.printf "%a@." Term.pp (Index.to_term key))
-    index
+let () = Index.iter (fun key _ -> Format.printf "%a@." Term.pp key) index
 
 let () = Format.printf "Unifiable@."
 
 let () =
   Index.iter_unifiable
-    (fun key _ -> Format.printf "%a@." Term.pp (Index.to_term key))
+    (fun key _ -> Format.printf "%a@." Term.pp key)
     index
     (neg (neg (var 0)))
