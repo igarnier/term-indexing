@@ -1,4 +1,4 @@
 (tests
- (names path_test rewriting_test term_test subst_test index_test misc)
+ (names path_test rewriting_test term_test subst_test index_test misc int_option_test)
  (libraries term_indexing hashcons alcotest qcheck qcheck-core qcheck-alcotest containers fmt)
 )

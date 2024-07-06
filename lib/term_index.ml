@@ -1,5 +1,7 @@
 module Vec = Containers.Vector
 
+let debug_mode = false
+
 (* References equipped with unique integers for debugging/printing purposes *)
 module IRef : sig
   type 'a iref
@@ -431,17 +433,19 @@ end = struct
            - bindings in [head] that were mapped in [subst] are of the form [(IVar, t)]
          *)
         let () =
-          assert (
-            List.for_all
-              (fun (v, t) ->
-                Internal_term.is_ivar v && not (Internal_term.is_ivar t))
-              general) ;
+          if debug_mode then (
+            assert (
+              List.for_all
+                (fun (v, t) ->
+                  Internal_term.is_ivar v && not (Internal_term.is_ivar t))
+                general) ;
 
-          assert (
-            List.for_all
-              (fun (v, t) ->
-                Internal_term.is_ivar v && not (Internal_term.is_ivar t))
-              head)
+            assert (
+              List.for_all
+                (fun (v, t) ->
+                  Internal_term.is_ivar v && not (Internal_term.is_ivar t))
+                head))
+          else ()
         in
 
         if subst_is_empty general then (

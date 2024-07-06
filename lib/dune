@@ -2,6 +2,7 @@
   (name term_indexing)
   (public_name term-indexing)
   (libraries hashcons containers printbox printbox-text fmt)
+  (instrumentation (backend bisect_ppx))
   (ocamlopt_flags (-warn-error -39 -O3)))
 
 (documentation

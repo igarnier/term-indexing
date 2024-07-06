@@ -24,7 +24,22 @@ let path_hash_injectivity =
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
+let concat_test =
+  Alcotest.test_case "test_path_concat" `Quick (fun () ->
+      let p1 = Path.at_index 1 (Path.at_index 2 Path.root) in
+      let p2 = Path.at_index 3 (Path.at_index 4 Path.root) in
+      let p3 =
+        Path.at_index
+          1
+          (Path.at_index 2 (Path.at_index 3 (Path.at_index 4 Path.root)))
+      in
+      Alcotest.(check @@ of_pp Path.pp)
+        "concatenation"
+        p3
+        (Path.concat ~above:p2 ~under:p1))
+
 let () =
   Alcotest.run
     "path"
-    [("short_path_hash_injectivity", conv [path_hash_injectivity])]
+    [ ("short_path_hash_injectivity", conv [path_hash_injectivity]);
+      ("path_concat", [concat_test]) ]

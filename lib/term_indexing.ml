@@ -4,7 +4,6 @@ module Pattern = Pattern
 module Subst = Subst
 module Term = Term
 module Term_index = Term_index
-module Slow_index = Slow_index
 
 (** [Make(P)] takes a {{!Term_indexing.Intf.Signature}[signature]} as input and returns
     a module packing the main features of the library. *)
@@ -39,3 +38,10 @@ end = struct
   module Subst = Subst.Make (P) (Default_map) (Term)
   module Index = Term_index.Make (P) (Term) (Subst)
 end
+
+(**/**)
+
+module Slow_index = Slow_index
+module Int_option = Int_option
+
+(**/**)

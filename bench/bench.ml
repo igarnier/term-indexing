@@ -1,7 +1,5 @@
 [@@@ocaml.warning "-32"]
 
-open Term_indexing
-
 module Prim = struct
   type t = Add | Sub | Mul | Div | Neg | Float of float
 
