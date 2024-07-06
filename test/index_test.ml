@@ -635,6 +635,33 @@ end
 
 module Test_against_efficient = Test_against_reference (Index2)
 
+module Regression_checks = struct
+  let regr1 =
+    Alcotest.test_case "regr1_specialize" `Quick (fun () ->
+        let keys =
+          [ float 0.5;
+            mul (float 0.5) (float 0.5);
+            mul (sub (float 0.5) (float 0.5)) (float 0.5);
+            mul (sub (float 0.5) (float 0.5)) (sub (var 0) (float 0.5)) ]
+        in
+        let index = Index2.create () in
+        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let query = mul (var 3) (var 3) in
+        let acc = ref [] in
+        Index2.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
+        let expected = mul (float 0.5) (float 0.5) in
+        match !acc with
+        | [t] when Expr.equal t expected -> ()
+        | got ->
+            Format.printf "%a@." (Index2.pp Fmt.int) index ;
+            Alcotest.failf
+              "got: %a, expected: %a"
+              (Fmt.Dump.list Expr.pp)
+              got
+              Expr.pp
+              expected)
+end
+
 let () =
   Alcotest.run
     "index"
@@ -661,4 +688,5 @@ let () =
             index_query_specialize;
             Overlapping_vars_test.index_overlapping_vars ] );
       ( "test-against-reference",
-        Test_against_efficient.[unification; generalize; specialize] ) ]
+        Test_against_efficient.[unification; generalize; specialize] );
+      ("regressions", [Regression_checks.regr1]) ]
