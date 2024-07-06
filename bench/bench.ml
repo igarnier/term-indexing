@@ -39,118 +39,78 @@ module Prim = struct
   let arity = function Add | Sub | Mul | Div -> 2 | Neg -> 1 | Float _ -> 0
 end
 
-module type Benchable_index = sig
-  type 'a t
+module TI = Term_indexing.Make (Prim)
+open TI
+open Term
 
-  type internal_term
+let add x y = prim Add [| x; y |]
 
-  type term
+let sub x y = prim Sub [| x; y |]
 
-  val create : unit -> 'a t
+let mul x y = prim Mul [| x; y |]
 
-  val insert : term -> int -> int t -> unit
+let div x y = prim Div [| x; y |]
 
-  val iter : (internal_term -> 'a -> unit) -> 'a t -> unit
+let neg x = prim Neg [| x |]
 
-  val pp : 'a Fmt.t -> 'a t Fmt.t
-end
+let float f = prim (Prim.Float f) [||]
 
-module Make_bench
-    (T : Intf.Term_core with type prim = Prim.t)
-    (I : Benchable_index with type term = T.t) =
-struct
-  open T
+let var s = var s
 
-  let add x y = prim Add [| x; y |]
+let rec iter_exhaustive depth k =
+  if depth = 0 then k (float 0.0)
+  else
+    iter_exhaustive (depth - 1) @@ fun l ->
+    k (neg l) ;
+    iter_exhaustive (depth - 1) @@ fun r ->
+    k (add l r) ;
+    (* k (sub l r) ; *)
+    (* k (mul l r) ; *)
+    k (div l r)
 
-  let sub x y = prim Sub [| x; y |]
+let timeit f =
+  let t0 = Unix.gettimeofday () in
+  f () ;
+  let t1 = Unix.gettimeofday () in
+  t1 -. t0
+[@@ocaml.inline]
 
-  let mul x y = prim Mul [| x; y |]
-
-  let div x y = prim Div [| x; y |]
-
-  let neg x = prim Neg [| x |]
-
-  let float f = prim (Prim.Float f) [||]
-
-  let var s = var s
-
-  let rec iter_exhaustive depth k =
-    if depth = 0 then k (float 0.0)
-    else
-      iter_exhaustive (depth - 1) @@ fun l ->
-      k (neg l) ;
-      iter_exhaustive (depth - 1) @@ fun r ->
-      k (add l r) ;
-      (* k (sub l r) ; *)
-      (* k (mul l r) ; *)
-      k (div l r)
-
-  let () =
-    let index = I.create () in
-    let c = ref 0 in
-    let acc = ref 0.0 in
-    iter_exhaustive 4 (fun expr ->
-        incr c ;
-        let t0 = Unix.gettimeofday () in
-        I.insert expr 0 index ;
-        let t1 = Unix.gettimeofday () in
-        let time_to_insert = t1 -. t0 in
-        acc := !acc +. time_to_insert) ;
-    Format.printf
-      "%d distinct terms inserted (%f kiloterms/secs)@."
-      !c
-      (float_of_int !c /. 1000.0 /. !acc) ;
-    let stored = ref 0 in
-    Gc.compact () ;
-    let t0 = Unix.gettimeofday () in
-    I.iter (fun _term _ -> incr stored) index ;
-    (* Format.printf "%a@." (I.pp Fmt.int) index ; *)
-    let t1 = Unix.gettimeofday () in
-    let time_to_iter = t1 -. t0 in
-    Format.printf
-      "%d distinct terms stored (%f kiloterms/secs)@."
-      !stored
-      (float_of_int !stored /. 1000.0 /. time_to_iter)
-end
-
-module Var_map : Intf.Map with type key = int = struct
-  include Map.Make (Int)
-
-  let empty () = empty
-
-  let to_seq_keys map = to_seq map |> Seq.map fst
-
-  let union m1 m2 =
-    union
-      (fun _ _ _ -> invalid_arg "Var_map.union: maps have overlapping domains")
-      m1
-      m2
-end
-
-module Expr = Term.Make_hash_consed (Prim) (Var_map)
-module Subst_mod = Subst.Make (Prim) (Var_map) (Expr)
-module Index = Slow_index.Make (Prim) (Var_map) (Expr) (Subst_mod)
-module Subst = Subst_mod
-
-module _ =
-  Make_bench
-    (Expr)
-    (struct
-      include Index
-
-      type internal_term = term
-
-      let insert k v i = ignore (insert k v i)
-    end)
-
-module Index2 = Term_index.Make (Prim) (Expr) (Subst)
-
-module _ =
-  Make_bench
-    (Expr)
-    (struct
-      include Index2
-
-      let iter = iter_transient
-    end)
+let () =
+  let index = Index.create () in
+  let c = ref 0 in
+  let acc = ref 0.0 in
+  iter_exhaustive 4 (fun expr ->
+      incr c ;
+      let dt = timeit (fun () -> Index.insert expr 0 index) in
+      acc := !acc +. dt) ;
+  Format.printf
+    "%d distinct terms inserted (%f kiloterms/secs)@."
+    !c
+    (float_of_int !c /. 1000.0 /. !acc) ;
+  let stored = ref 0 in
+  Gc.compact () ;
+  let dt = timeit (fun () -> Index.iter (fun _term _ -> incr stored) index) in
+  Format.printf
+    "iter: %d distinct terms stored (%f kiloterms/secs)@."
+    !stored
+    (float_of_int !stored /. 1000.0 /. dt) ;
+  stored := 0 ;
+  let dt =
+    timeit (fun () -> Index.iter_transient (fun _term _ -> incr stored) index)
+  in
+  Format.printf
+    "iter_transient: %d distinct terms stored (%f kiloterms/secs)@."
+    !stored
+    (float_of_int !stored /. 1000.0 /. dt) ;
+  stored := 0 ;
+  let dt =
+    timeit (fun () ->
+        Index.iter_unifiable_transient
+          (fun _term _ -> incr stored)
+          index
+          (var 0))
+  in
+  Format.printf
+    "iter_unifiable_transient: %d distinct terms stored (%f kiloterms/secs)@."
+    !stored
+    (float_of_int !stored /. 1000.0 /. dt)

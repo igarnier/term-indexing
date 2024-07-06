@@ -387,4 +387,16 @@ There's a single one:
 Neg(Neg(Add(1.0, V(3))))
 v}
 
-Happy hacking!
+If you need maximum performance, it is recommended to use the transient versions of these iterators,
+which expose directly the underlying term representation and do not perform the conversion to
+{{!Term_indexing.Intf.Term.t}[Term.t]}. These are
+{ul
+{- {{!Term_indexing.Intf.Term_index.iter_transient}[Index.iter_transient]} }
+{- {{!Term_indexing.Intf.Term_index.iter_unifiable_transient}[Index.iter_unifiable_transient]} }
+{- {{!Term_indexing.Intf.Term_index.iter_specialize_transient}[Index.iter_specialize_transient]} }
+{- {{!Term_indexing.Intf.Term_index.iter_generalize_transient}[Index.iter_generalize_transient]} }
+}
+Have a look at the functions manipulating {{!Term_indexing.Intf.Term_index.internal_term}[Index.internal_term]}.
+In some situations, one can expect one order of magnitude better performance compared to the
+non-transient iterators. However, do keep in mind that the lifetime of these internal terms ends when the
+closure passed to the iterator returns!

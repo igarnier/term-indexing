@@ -145,10 +145,20 @@ end = struct
       loop fprim fvar IS.empty term
 
     (* Precondition: input is a [Var] *)
+    (* let rec get_repr (var : t) = *)
+    (*   match !var with *)
+    (*   | Var (_, repr) -> ( *)
+    (*       match !repr with IVar | Prim _ -> var | Var (_, _) -> get_repr repr) *)
+    (*   | IVar | Prim _ -> assert false *)
+
+    (* Precondition: input is a [Var]
+       Postcondition: returns the representative term and the variable *)
     let rec get_repr (var : t) =
       match !var with
       | Var (_, repr) -> (
-          match !repr with IVar | Prim _ -> var | Var (_, _) -> get_repr repr)
+          match !repr with
+          | IVar | Prim _ -> (repr, var)
+          | Var (_, _) -> get_repr repr)
       | IVar | Prim _ -> assert false
 
     let ivars term =
@@ -610,63 +620,47 @@ end = struct
           if repr_ptr1 == repr_ptr2 then (undo_stack, true)
           else
             (* term1, term2 are [Var], hence precondition of [get_repr] is satisfied *)
-            (* TODO: get_repr: could return [repr] _and_ [root] to avoid destructuring *)
-            let repr1 = Internal_term.get_repr term1 in
-            let repr2 = Internal_term.get_repr term2 in
-            (* invariant: repr1, repr2 are Var pointing to Prim or IVar *)
+            let (repr1, root_var1) = Internal_term.get_repr term1 in
+            let (repr2, root_var2) = Internal_term.get_repr term2 in
+            (* invariant: root_var1, root_var2 are Var pointing to Prim or IVar *)
             match (!repr1, !repr2) with
-            | (Var (_, root1), Var (_, root2)) -> (
-                match (!root1, !root2) with
-                | (Prim _, Prim _) -> unify undo_stack root1 root2
-                | (Prim _, IVar) ->
-                    (* let term2 point to term1 *)
-                    root2 := !repr1 ;
-                    ((root2, Internal_term.IVar) :: undo_stack, true)
-                | (IVar, Prim _) ->
-                    (* let term1 point to term2 *)
-                    root1 := !repr2 ;
-                    ((root1, IVar) :: undo_stack, true)
-                | (IVar, IVar) ->
-                    (* TODO bug: it may be the case that repr1 == repr2, if we
-                       perform the assignment then we'll introduce a cycle. *)
-                    if root1 == root2 then (undo_stack, true)
-                    else (
-                      root1 := !repr2 ;
-                      ((root1, IVar) :: undo_stack, true))
-                | _ ->
-                    (* Impossible case *)
-                    assert false)
+            | (Prim _, Prim _) -> unify undo_stack repr1 repr2
+            | (Prim _, IVar) ->
+                (* let term2 point to term1 *)
+                repr2 := !root_var1 ;
+                ((repr2, Internal_term.IVar) :: undo_stack, true)
+            | (IVar, Prim _) ->
+                (* let term1 point to term2 *)
+                repr1 := !root_var2 ;
+                ((repr1, IVar) :: undo_stack, true)
+            | (IVar, IVar) ->
+                (* TODO bug: it may be the case that root_var1 == root_var2, if we
+                   perform the assignment then we'll introduce a cycle. *)
+                if repr1 == repr2 then (undo_stack, true)
+                else (
+                  repr1 := !root_var2 ;
+                  ((repr1, IVar) :: undo_stack, true))
             | _ ->
                 (* Impossible case *)
                 assert false)
       | (Var (_, _), Prim _) -> (
-          let repr = Internal_term.get_repr term1 in
+          let (repr, _root_var) = Internal_term.get_repr term1 in
           match !repr with
-          | Var (_, root) -> (
-              match !root with
-              | IVar ->
-                  root := !term2 ;
-                  ((root, IVar) :: undo_stack, true)
-              | Prim _ -> unify undo_stack root term2
-              | Var _ ->
-                  (* Impossible case *)
-                  assert false)
-          | _ ->
+          | IVar ->
+              repr := !term2 ;
+              ((repr, IVar) :: undo_stack, true)
+          | Prim _ -> unify undo_stack repr term2
+          | Var _ ->
               (* Impossible case *)
               assert false)
       | (Prim _, Var (_, _)) -> (
-          let repr = Internal_term.get_repr term2 in
+          let (repr, _root_var) = Internal_term.get_repr term2 in
           match !repr with
-          | Var (_, root) -> (
-              match !root with
-              | IVar ->
-                  root := !term1 ;
-                  ((root, IVar) :: undo_stack, true)
-              | Prim _ -> unify undo_stack term1 root
-              | Var _ ->
-                  (* Impossible case *)
-                  assert false)
-          | _ ->
+          | IVar ->
+              repr := !term1 ;
+              ((repr, IVar) :: undo_stack, true)
+          | Prim _ -> unify undo_stack term1 repr
+          | Var _ ->
               (* Impossible case *)
               assert false)
       | (IVar, ((Prim _ | Var _) as desc2)) ->
