@@ -154,6 +154,9 @@ module type Term_core = sig
   (** Pretty-printing of terms. *)
   val pp : Format.formatter -> t -> unit
 
+  (** Pretty-printing of terms in s-exp format. *)
+  val pp_sexp : Format.formatter -> t -> unit
+
   (** [prim p ts] constructs a term with head equal to [p] and subterms equal to [ts]
 
       @raise Invalid_argument if the length of [ts] does not match the arity of [p]. *)

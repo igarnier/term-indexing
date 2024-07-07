@@ -48,7 +48,7 @@ struct
     Format.fprintf
       fmtr
       "%a"
-      Fmt.Dump.(list (pair T.pp pp_elt))
+      Fmt.Dump.(list (pair T.pp_sexp pp_elt))
       (M.bindings !index)
 
   module Internal_for_tests = struct

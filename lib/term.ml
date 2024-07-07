@@ -19,6 +19,22 @@ let rec pp pp_prim fmtr term =
            (pp pp_prim))
         subterms
 
+let rec pp_sexp pp_prim fmtr term =
+  let open Format in
+  match term.Hashcons.node with
+  | Var i -> fprintf fmtr "(var %d)" i
+  | Prim (prim, [||], _) -> fprintf fmtr "%a" pp_prim prim
+  | Prim (prim, subterms, _) ->
+      fprintf
+        fmtr
+        "@[<hv 1>(%a %a)@]"
+        pp_prim
+        prim
+        (pp_print_array
+           ~pp_sep:(fun fmtr () -> fprintf fmtr "@ ")
+           (pp_sexp pp_prim))
+        subterms
+
 (* Fold over the term. Paths are in lexicographic order when reversed.
    TODO: make tail-recursive if needed. *)
 let rec fold f acc term path =
@@ -210,6 +226,8 @@ module Make_hash_consed
 
   (* re-export pretty-printer *)
   let pp fmtr term = pp P.pp fmtr term
+
+  let pp_sexp fmtr term = pp_sexp P.pp fmtr term
 
   let uid term = term.Hashcons.tag
 end

@@ -110,6 +110,17 @@ let alpha_eq_list l1 l2 =
   let l2 = List.map canon l2 |> List.sort Expr.compare in
   List.equal Expr.equal l1 l2
 
+let alpha_eq_list_diff l1 l2 =
+  let l1 = List.map canon l1 |> List.sort Expr.compare in
+  let l2 = List.map canon l2 |> List.sort Expr.compare in
+  let in_l1_not_l2 =
+    List.filter (fun x1 -> not (List.exists (fun x2 -> alpha_eq x1 x2) l2)) l1
+  in
+  let in_l2_not_l1 =
+    List.filter (fun x2 -> not (List.exists (fun x1 -> alpha_eq x1 x2) l1)) l2
+  in
+  (in_l1_not_l2, in_l2_not_l1)
+
 (* ---------------------------------------- *)
 
 type native =
