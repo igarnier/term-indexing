@@ -476,10 +476,9 @@ module Make
         let subst = S.union head subst in
         let term = S.eval_exn (indicator 0) subst |> S.lift subst in
         if S.Unification.generalize term query then (
-          Format.printf "%a generalizes %a@." T.pp term T.pp query ;
           (match data with None -> () | Some data -> f term data) ;
           iter_generalize_node f subtrees query subst)
-        else Format.printf "%a does not generalize %a@." T.pp term T.pp query)
+        else ())
       nodes
 
   let iter_generalize f root (query : term) =
@@ -494,9 +493,8 @@ module Make
         | Some uf_state ->
             let subst = S.Unification.subst uf_state in
             let term = S.eval_exn (indicator 0) subst |> S.lift subst in
-            if S.Unification.generalize query term then (
-              Format.printf "%a specializes %a@." T.pp term T.pp query ;
-              match data with None -> () | Some data -> f term data)
+            if S.Unification.generalize query term then
+              match data with None -> () | Some data -> f term data
             else () ;
             iter_specialize_node f subtrees query uf_state)
       nodes
