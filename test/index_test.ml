@@ -489,7 +489,7 @@ module Test_against_reference (I : Index_signature) = struct
         let hash = Path.hash path in
         Some (hash mod 100))
 
-  let gen_terms = Gen.list gen
+  let gen_terms = Gen.small_list gen
 
   let index_collect_unifiable query index =
     let acc = ref [] in
@@ -554,7 +554,8 @@ module Test_against_reference (I : Index_signature) = struct
   let generalize =
     QCheck2.Test.make
       ~name:"generalize"
-      Gen.(tup2 gen gen_terms)
+      ~count
+      Gen.(no_shrink (tup2 gen gen_terms))
       (fun (query, terms) ->
         let index = I.create () in
         let baseline_index = Reference.create () in
@@ -576,11 +577,11 @@ module Test_against_reference (I : Index_signature) = struct
             index
             (Reference.pp Fmt.int)
             baseline_index
-            Expr.pp
+            Expr.pp_sexp
             query
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Expr.pp_sexp)
             expected
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Expr.pp_sexp)
             got
         else true)
     |> QCheck_alcotest.to_alcotest
@@ -601,7 +602,8 @@ module Test_against_reference (I : Index_signature) = struct
   let specialize =
     QCheck2.Test.make
       ~name:"specialize"
-      Gen.(tup2 gen gen_terms)
+      ~count
+      Gen.(no_shrink (tup2 gen gen_terms))
       (fun (query, terms) ->
         let index = I.create () in
         let baseline_index = Reference.create () in
@@ -660,6 +662,363 @@ module Regression_checks = struct
               got
               Expr.pp
               expected)
+
+  let regr2 =
+    Alcotest.test_case "regr2_specialize" `Quick (fun () ->
+        let h = float 0.5 in
+        let keys =
+          [ h;
+            div h h;
+            div (add h h) h;
+            div (div h h) (float 1.5);
+            div (div h h) (float 2.5);
+            div (div (float 1.5) (float 1.5)) (div (float 1.5) (var 0)) ]
+        in
+
+        let index = Index2.create () in
+        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let query = div (var 3) (var 3) in
+        let acc = ref [] in
+        Index2.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
+        let expected = div h h in
+        match !acc with
+        | [t] when Expr.equal t expected -> ()
+        | got ->
+            Format.printf "%a@." (Index2.pp Fmt.int) index ;
+            Alcotest.failf
+              "got: %a, expected: %a"
+              (Fmt.Dump.list Expr.pp)
+              got
+              Expr.pp
+              expected)
+
+  let regr3 =
+    Alcotest.test_case "regr3_generalize" `Quick (fun () ->
+        let keys =
+          [ sub (var 3) (var 3);
+            neg (var 5);
+            div
+              (neg (add (float 0.5) (neg (add (var 18) (var 84)))))
+              (float 9.5) ]
+        in
+        let index = Index2.create () in
+        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let query =
+          sub (div (float 8.5) (sub (float 35.5) (neg (float 1.5)))) (var 3)
+        in
+        let acc = ref [] in
+        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        let got = !acc in
+        let expected = [] in
+        if alpha_eq_list got expected then ()
+        else
+          Alcotest.failf
+            "got: %a, expected: %a"
+            (Fmt.Dump.list Expr.pp_sexp)
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected)
+
+  let regr4 =
+    Alcotest.test_case "regr4_generalize" `Quick (fun () ->
+        let keys =
+          [ (float 6.500000, 71);
+            (var 9, 75);
+            (float 2.500000, 82);
+            (float 3.500000, 90);
+            (float 7.500000, 8);
+            (float 0.500000, 60);
+            (var 0, 78);
+            (float 5.500000, 96);
+            (float 42.500000, 97);
+            (float 4.500000, 74);
+            (float 1.500000, 43);
+            (var 5, 94);
+            (float 9.500000, 31);
+            (mul (float 6.500000) (float 2.500000), 53);
+            (neg (float 0.500000), 88);
+            (var 4, 64);
+            (var 8, 80);
+            (float 24.500000, 83);
+            (float 88.500000, 21);
+            (var 12, 87);
+            (neg (var 4), 41);
+            (var 44, 11);
+            (neg (var 5), 46);
+            (float 28.500000, 42);
+            (sub (float 0.500000) (var 8), 67);
+            (mul (var 0) (float 8.500000), 14);
+            (add (var 4) (float 6.500000), 10);
+            (div (var 1) (var 9), 24);
+            (var 68, 66);
+            (mul (float 2.500000) (var 1), 15);
+            (var 2, 13);
+            (var 6, 81);
+            (var 76, 69);
+            ( div
+                (mul
+                   (add
+                      (mul (sub (var 24) (float 49.500000)) (float 4.500000))
+                      (sub (div (float 2.500000) (var 84)) (float 25.500000)))
+                   (float 3.500000))
+                (var 4),
+              95 );
+            (var 7, 3);
+            (mul (sub (var 7) (var 1)) (float 4.500000), 93);
+            ( div
+                (mul
+                   (sub
+                      (neg (mul (var 24) (float 1.500000)))
+                      (neg (sub (var 18) (float 9.500000))))
+                   (div (var 7) (float 70.500000)))
+                (float 3.500000),
+              92 );
+            ( sub
+                (neg (float 5.500000))
+                (sub
+                   (add
+                      (neg (add (var 24) (float 6.500000)))
+                      (div
+                         (add (var 78) (var 9))
+                         (mul (float 8.500000) (var 12))))
+                   (mul (var 7) (float 90.500000))),
+              91 );
+            (neg (var 6), 68);
+            ( add
+                (add
+                   (sub
+                      (sub
+                         (sub (float 45.500000) (float 8.500000))
+                         (float 1.500000))
+                      (sub (float 13.500000) (neg (var 21))))
+                   (float 7.500000))
+                (neg (var 6)),
+              89 );
+            (var 3, 73);
+            ( div
+                (var 3)
+                (neg
+                   (mul
+                      (add (var 7) (float 1.500000))
+                      (mul (mul (float 3.500000) (var 9)) (neg (var 9))))),
+              86 );
+            ( mul
+                (div (var 6) (float 54.500000))
+                (div
+                   (add
+                      (float 4.500000)
+                      (sub (neg (var 78)) (div (var 9) (var 12))))
+                   (add (var 7) (var 9))),
+              85 );
+            ( add
+                (add
+                   (div (var 2) (neg (var 75)))
+                   (mul (float 7.500000) (mul (add (var 52) (var 24)) (var 0))))
+                (var 28),
+              84 );
+            (div (float 0.500000) (var 6), 79);
+            ( neg
+                (div
+                   (float 6.500000)
+                   (div (neg (div (var 0) (float 70.500000))) (var 70))),
+              72 );
+            (mul (div (var 7) (float 0.500000)) (float 87.500000), 70);
+            (neg (var 59), 65);
+            ( mul (float 9.500000) (mul (var 38) (sub (float 0.500000) (var 5))),
+              61 );
+            ( mul
+                (neg (mul (float 1.500000) (mul (float 95.500000) (var 7))))
+                (add
+                   (float 9.500000)
+                   (sub (var 5) (sub (float 2.500000) (float 33.500000)))),
+              59 );
+            ( mul (sub (var 2) (float 6.500000)) (div (var 36) (float 2.500000)),
+              58 );
+            (add (var 7) (neg (add (var 0) (var 0))), 57);
+            (mul (var 8) (float 32.500000), 56);
+            ( div
+                (div
+                   (float 1.500000)
+                   (mul
+                      (div
+                         (mul (float 70.500000) (float 9.500000))
+                         (mul (float 58.500000) (float 6.500000)))
+                      (float 7.500000)))
+                (float 5.500000),
+              55 );
+            ( div
+                (var 7)
+                (mul
+                   (add
+                      (div (float 90.500000) (mul (var 15) (float 4.500000)))
+                      (var 9))
+                   (float 8.500000)),
+              52 );
+            ( div
+                (div
+                   (mul (var 5) (mul (sub (float 5.500000) (var 84)) (var 58)))
+                   (mul (var 8) (var 67)))
+                (float 2.500000),
+              51 );
+            ( div
+                (sub
+                   (div
+                      (var 73)
+                      (add (div (var 18) (float 47.500000)) (float 1.500000)))
+                   (neg (mul (neg (float 0.500000)) (neg (var 0)))))
+                (float 51.500000),
+              50 );
+            ( add
+                (sub
+                   (div
+                      (sub
+                         (add (float 6.500000) (float 8.500000))
+                         (add (var 79) (float 21.500000)))
+                      (float 58.500000))
+                   (var 9))
+                (div
+                   (var 5)
+                   (neg
+                      (sub
+                         (div (float 0.500000) (float 7.500000))
+                         (float 0.500000)))),
+              48 );
+            (div (var 3) (float 5.500000), 39);
+            ( div
+                (sub
+                   (neg (var 71))
+                   (sub
+                      (sub (neg (var 0)) (float 5.500000))
+                      (mul (var 80) (mul (var 41) (var 38)))))
+                (div
+                   (div (var 8) (neg (add (float 7.500000) (var 9))))
+                   (mul
+                      (sub
+                         (neg (var 44))
+                         (mul (float 7.500000) (float 40.500000)))
+                      (add (float 3.500000) (float 1.500000)))),
+              37 );
+            ( sub
+                (var 22)
+                (mul
+                   (neg
+                      (sub
+                         (neg (float 62.500000))
+                         (sub (var 15) (float 4.500000))))
+                   (sub (div (add (var 44) (var 53)) (var 42)) (var 7))),
+              35 );
+            ( mul
+                (neg (var 40))
+                (div
+                   (add
+                      (float 7.500000)
+                      (add (var 0) (add (float 46.500000) (var 12))))
+                   (mul (neg (sub (var 44) (var 53))) (var 1))),
+              34 );
+            ( div
+                (var 7)
+                (div
+                   (add
+                      (mul
+                         (add (float 9.500000) (float 8.500000))
+                         (float 7.500000))
+                      (mul
+                         (sub (float 0.500000) (float 0.500000))
+                         (neg (var 9))))
+                   (var 0)),
+              33 );
+            ( mul
+                (sub
+                   (add
+                      (add (add (var 24) (float 90.500000)) (float 4.500000))
+                      (var 2))
+                   (float 8.500000))
+                (sub
+                   (add
+                      (div
+                         (float 1.500000)
+                         (add (float 9.500000) (float 2.500000)))
+                      (var 7))
+                   (var 9)),
+              32 );
+            ( sub
+                (var 54)
+                (add
+                   (div
+                      (mul (neg (var 24)) (neg (float 5.500000)))
+                      (div (var 6) (float 7.500000)))
+                   (float 0.500000)),
+              30 );
+            ( add
+                (sub (neg (sub (var 2) (float 4.500000))) (float 7.500000))
+                (float 81.500000),
+              27 );
+            ( sub
+                (neg
+                   (mul (var 1) (sub (mul (float 5.500000) (var 84)) (var 92))))
+                (sub (float 81.500000) (var 8)),
+              26 );
+            (sub (var 9) (div (neg (mul (var 2) (var 5))) (var 5)), 22);
+            ( div
+                (float 1.500000)
+                (mul
+                   (div (float 2.500000) (add (var 6) (float 6.500000)))
+                   (add (float 48.500000) (var 96))),
+              20 );
+            (sub (var 86) (sub (var 8) (var 3)), 12);
+            ( mul
+                (mul
+                   (float 2.500000)
+                   (sub
+                      (mul (add (var 0) (var 91)) (float 9.500000))
+                      (neg (div (float 7.500000) (var 24)))))
+                (float 3.500000),
+              6 );
+            (neg (sub (var 7) (var 2)), 5);
+            ( div
+                (neg (mul (float 3.500000) (float 1.500000)))
+                (sub
+                   (add (sub (var 9) (float 5.500000)) (float 82.500000))
+                   (var 0)),
+              0 ) ]
+          |> List.map fst
+        in
+        let index = Index2.create () in
+        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let query = sub (var 2) (var 9) in
+        let acc = ref [] in
+        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        let got = !acc in
+        let expected =
+          [ var 0;
+            var 2;
+            var 3;
+            var 4;
+            var 5;
+            var 6;
+            var 7;
+            var 8;
+            var 9;
+            var 76;
+            var 68;
+            var 44;
+            var 12 ]
+        in
+        if alpha_eq_list got expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff got expected in
+          Alcotest.failf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
 end
 
 let () =
@@ -687,6 +1046,6 @@ let () =
             index_query_generalize;
             index_query_specialize;
             Overlapping_vars_test.index_overlapping_vars ] );
+      ("regressions", Regression_checks.[regr1; regr2; regr3; regr4]);
       ( "test-against-reference",
-        Test_against_efficient.[unification; generalize; specialize] );
-      ("regressions", [Regression_checks.regr1]) ]
+        Test_against_efficient.[unification; generalize; specialize] ) ]
