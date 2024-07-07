@@ -1019,6 +1019,32 @@ module Regression_checks = struct
             left
             (Fmt.Dump.list Expr.pp_sexp)
             right))
+
+  let regr5 =
+    Alcotest.test_case "regr5_generalize" `Quick (fun () ->
+        let keys = [var 0] in
+        let index = Index2.create () in
+        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let query = add (float 1.0) (var 0) in
+        let acc = ref [] in
+        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        let got = !acc in
+        let expected = [var 0] in
+        if alpha_eq_list got expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff got expected in
+          Alcotest.failf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
 end
 
 let () =
@@ -1046,6 +1072,6 @@ let () =
             index_query_generalize;
             index_query_specialize;
             Overlapping_vars_test.index_overlapping_vars ] );
-      ("regressions", Regression_checks.[regr1; regr2; regr3; regr4]);
+      ("regressions", Regression_checks.[regr1; regr2; regr3; regr5; regr4]);
       ( "test-against-reference",
         Test_against_efficient.[unification; generalize; specialize] ) ]
