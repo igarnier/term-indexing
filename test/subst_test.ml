@@ -4,16 +4,6 @@ open Arith
 module Int_map = Map.Make (Int)
 
 module Subst_tests = struct
-  let print_test =
-    QCheck2.Test.make
-      ~name:"subst-print-test"
-      ~count:100
-      Arith.subst_gen
-      (fun term ->
-        Format.printf "%a@." Subst.pp term ;
-        true)
-    |> QCheck_alcotest.to_alcotest
-
   let add_shadow_earlier_bindings =
     Alcotest.test_case "subst-add-shadow-earlier-bindings" `Quick (fun () ->
         let fill list =
@@ -80,6 +70,20 @@ module Unification = struct
         t1
     with U.Cannot_unify -> ()
 
+  let check_unify t0 t1 =
+    let state = U.empty () in
+    try
+      ignore (U.unify_exn t0 t1 state) ;
+      true
+    with U.Cannot_unify -> false
+
+  let check_fail_unify t0 t1 =
+    let state = U.empty () in
+    try
+      ignore (U.unify_exn t0 t1 state) ;
+      false
+    with U.Cannot_unify -> true
+
   let unify_expect ~expected t0 t1 =
     let state = U.empty () in
     try
@@ -103,6 +107,24 @@ module Unification = struct
       (fun term ->
         ignore (unify term term) ;
         true)
+    |> QCheck_alcotest.to_alcotest
+
+  let unif_commutative =
+    QCheck2.Test.make
+      ~name:"unif-commutative"
+      ~count:10_000
+      (QCheck2.Gen.pair Arith.gen Arith.gen)
+      (fun (lhs, rhs) ->
+        let clr = check_unify lhs rhs in
+        let crl = check_unify rhs lhs in
+        if not ((clr && crl) || ((not clr) && not crl)) then
+          QCheck.Test.fail_reportf
+            "check not symmetric: %a, %a"
+            Expr.pp
+            lhs
+            Expr.pp
+            rhs
+        else true)
     |> QCheck_alcotest.to_alcotest
 
   let unification_case_1 =
@@ -138,6 +160,12 @@ module Unification = struct
           ~expected:(add (add one one) one)
           (add (add (var 0) (var 0)) one)
           (add (var 1) (var 0)))
+
+  let unification_regressions =
+    Alcotest.test_case "unification-regressions" `Quick (fun () ->
+        let rhs = mul (var 5) (sub (float 0.5) (float 1.0)) in
+        let lhs = mul (var 0) (sub (var 5) (var 0)) in
+        fail_unify lhs rhs)
 
   let generalize_diag =
     QCheck2.Test.make
@@ -184,15 +212,16 @@ let () =
     "subst"
     [ ( "subst",
         Subst_tests.
-          [ print_test;
-            seq_inverse;
+          [ seq_inverse;
             of_seq_shadow_earlier_bindings;
             add_shadow_earlier_bindings ] );
       ( "unification",
         Unification.
           [ unification_diag;
+            unif_commutative;
             unification_case_1;
             unification_case_2;
             unification_case_3;
+            unification_regressions;
             generalize_diag;
             generalize_cases ] ) ]
