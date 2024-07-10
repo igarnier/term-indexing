@@ -70,8 +70,9 @@ module Make
     let empty () = { subst = empty (); uf = Uf.Map_based.empty () }
 
     let get_repr var { subst; uf } =
-      let repr = Uf.Map_based.find uf var in
-      eval repr subst
+      let repr_var = Uf.Map_based.find uf var in
+      let repr_term = eval repr_var subst in
+      (repr_term, repr_var)
 
     let rec unify_exn (term1 : term) (term2 : term) (state : state) =
       if T.equal term1 term2 then state
@@ -85,10 +86,10 @@ module Make
             else raise Cannot_unify
         | (Term.Var v1, Term.Var v2) -> (
             (* v1 <> v2 *)
-            let repr1_opt = get_repr v1 state in
-            let repr2_opt = get_repr v2 state in
             let (vrepr, uf) = Uf.Map_based.union state.uf v1 v2 in
-            match (repr1_opt, repr2_opt) with
+            let (term1_opt, _) = get_repr v1 state in
+            let (term2_opt, _) = get_repr v2 state in
+            match (term1_opt, term2_opt) with
             | (None, None) -> { state with uf }
             | (Some repr, None) | (None, Some repr) ->
                 let subst = add vrepr repr state.subst in
@@ -97,15 +98,15 @@ module Make
                 let state = unify_exn repr1 repr2 { state with uf } in
                 { state with uf })
         | (Term.Var v, Term.Prim _) -> (
-            let repr_opt = get_repr v state in
-            match repr_opt with
-            | None -> { state with subst = add v term2 state.subst }
-            | Some repr -> unify_exn repr term2 state)
+            let (term_opt, repr_var) = get_repr v state in
+            match term_opt with
+            | None -> { state with subst = add repr_var term2 state.subst }
+            | Some term -> unify_exn term term2 state)
         | (Term.Prim _, Term.Var v) -> (
-            let repr_opt = get_repr v state in
-            match repr_opt with
-            | None -> { state with subst = add v term1 state.subst }
-            | Some repr -> unify_exn term1 repr state)
+            let (term_opt, repr_var) = get_repr v state in
+            match term_opt with
+            | None -> { state with subst = add repr_var term1 state.subst }
+            | Some term -> unify_exn term1 term state)
 
     and unify_subterms subterms1 subterms2 (state : state) i =
       if i = Array.length subterms1 then state
@@ -150,12 +151,12 @@ module Make
     let unify_subst_exn (subst : t) (state : state) =
       Seq.fold_left
         (fun state (v, t) ->
-          let repr_opt = get_repr v state in
-          match repr_opt with
-          | None -> { state with subst = add v t state.subst }
-          | Some repr ->
-              let state = { state with subst = add v t state.subst } in
-              unify_exn repr t state)
+          let (term_opt, repr_var) = get_repr v state in
+          match term_opt with
+          | None -> { state with subst = add repr_var t state.subst }
+          | Some term ->
+              let state = { state with subst = add repr_var t state.subst } in
+              unify_exn term t state)
         state
         (M.to_seq subst)
 

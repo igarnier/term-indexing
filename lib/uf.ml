@@ -8,6 +8,8 @@ module type PersistentArray = sig
   val set : 'a t -> int -> 'a -> 'a t
 
   val push : 'a t -> 'a -> 'a t
+
+  val pp : 'a Fmt.t -> 'a t Fmt.t
 end
 
 module Make (A : PersistentArray) : sig
@@ -20,6 +22,8 @@ module Make (A : PersistentArray) : sig
   val find : t -> elt -> elt
 
   val union : t -> elt -> elt -> elt * t
+
+  val pp : t Fmt.t
 end = struct
   type t = { rank : int A.t; mutable parent : int A.t }
 
@@ -51,6 +55,8 @@ end = struct
       else
         (cx, { rank = A.set h.rank cx (rx + 1); parent = A.set h.parent cy cx })
     else (cx, h)
+
+  let pp fmtr uf = A.pp Fmt.int fmtr uf.parent
 end
 
 module Map_based = Make (struct
@@ -63,4 +69,8 @@ module Map_based = Make (struct
   let set a i v = Int_map.add i v a
 
   let push a v = Int_map.add (Int_map.cardinal a) v a
+
+  let pp pp_v ppf a =
+    let pp_elt ppf (i, v) = Fmt.pf ppf "%d: %a" i pp_v v in
+    Fmt.pf ppf "{@[<hov>%a@]}" (Fmt.iter_bindings Int_map.iter pp_elt) a
 end)
