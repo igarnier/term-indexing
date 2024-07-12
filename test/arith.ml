@@ -64,16 +64,7 @@ module type Index_signature = sig
   end
 end
 
-module Index_raw = Slow_index.Make (Prim) (Var_map) (Expr) (Subst_mod)
-
-module Index : Index_signature = struct
-  include Index_raw
-
-  let insert f data index = ignore (insert f data index)
-end
-
-module Index2_raw = Term_index.Make (Prim) (Expr) (Subst_mod)
-module Index2 = Index2_raw
+module Index = Term_index.Make (Prim) (Expr) (Subst_mod)
 module Reference = Naive_index.Make (Prim) (Expr) (Subst_mod)
 module Subst = Subst_mod
 
@@ -207,9 +198,7 @@ let term_gen canonical_var : Expr.t Gen.t =
                 if indicator then
                   (* We forbid toplevel indicator variables *)
                   if Path.equal path Path.root then float_ else try_var path
-                else
-                  small_nat >>= fun i ->
-                  return (var (Index_raw.Internal_for_tests.index i)))
+                else small_nat >|= var)
         | `Float -> float_)
     (Path.root, 5)
 
@@ -217,7 +206,7 @@ let term_gen canonical_var : Expr.t Gen.t =
 let gen =
   term_gen (fun path ->
       let hash = Path.hash path in
-      Some (Index_raw.Internal_for_tests.indicator (hash mod 100)))
+      Some (hash mod 100))
 
 let memoize_enum : int -> Path.t -> int option =
  fun upper_bound ->
@@ -230,10 +219,8 @@ let memoize_enum : int -> Path.t -> int option =
       | None ->
           let next = !c in
           incr c ;
-          let indic = Index_raw.Internal_for_tests.indicator next in
-          Hashtbl.add table path indic ;
-          assert (indic < Index_raw.Internal_for_tests.indicator upper_bound) ;
-          Some indic
+          Hashtbl.add table path next ;
+          Some next
       | Some _ as res -> res
 
 let subst_gen : Subst.t Gen.t =
@@ -249,16 +236,9 @@ let subst_gen : Subst.t Gen.t =
      etc
   *)
   let open Gen in
-  let var_count = small_nat in
-  let make_domain count = List.init count Fun.id in
-  let domain_gen = Gen.map make_domain var_count in
-  let term_gen i =
-    let indicator = Index_raw.Internal_for_tests.indicator i in
-    pair (return indicator) (term_gen (memoize_enum i))
-  in
-  Gen.bind domain_gen @@ fun list ->
-  Gen.map
-    (fun l -> Subst.of_seq (List.to_seq l))
-    (flatten_l (List.map term_gen list))
+  let enumerate count = List.init count Fun.id in
+  let term_gen var = pair (return var) (term_gen (memoize_enum var)) in
+  small_nat >|= enumerate >>= fun domain ->
+  flatten_l (List.map term_gen domain) >|= fun l -> Subst.of_seq (List.to_seq l)
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests

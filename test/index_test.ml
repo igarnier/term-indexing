@@ -3,172 +3,6 @@
 open Arith
 module Path = Term_indexing.Path
 
-module Mscg_tests = struct
-  let diag_idempotent =
-    QCheck2.Test.make
-      ~name:"mscg-diag-idempotent"
-      ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
-      ~count:100
-      Arith.gen
-      (fun term ->
-        let (res, _, _) = Index_raw.Internal_for_tests.mscg term term in
-        Expr.equal term res)
-    |> QCheck_alcotest.to_alcotest
-
-  let diag_commutative =
-    QCheck2.Test.make
-      ~name:"mscg-diag-commutative"
-      ~print:(fun (term1, term2) ->
-        Format.asprintf "%a, %a" Expr.pp term1 Expr.pp term2)
-      ~count:100
-      (QCheck2.Gen.pair Arith.gen Arith.gen)
-      (fun (term1, term2) ->
-        let (res1, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
-        let (res2, _, _) = Index_raw.Internal_for_tests.mscg term2 term1 in
-        Expr.equal res1 res2)
-    |> QCheck_alcotest.to_alcotest
-
-  let mscg_case0 =
-    Alcotest.test_case "mscg-case0" `Quick (fun () ->
-        let term1 = add (mul (var 1) (var 5)) (var 9) in
-        let term2 = add (div (var 1) (var 5)) (var 9) in
-        let (res, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
-        match to_native res with
-        | Add (Var 0, Var 9) -> ()
-        | _ -> Alcotest.fail "mscg-case0")
-
-  let mscg_case1 =
-    Alcotest.test_case "mscg-case1" `Quick (fun () ->
-        let term1 = add (mul (var 1) (var 5)) (var 9) in
-        let term2 = mul (mul (var 1) (var 5)) (var 9) in
-        let (res, _, _) = Index_raw.Internal_for_tests.mscg term1 term2 in
-        match to_native res with Var 0 -> () | _ -> Alcotest.fail "mscg-case1")
-
-  let mscg_case2 =
-    Alcotest.test_case "mscg-case2" `Quick (fun () ->
-        let term1 = add (mul (var 1) (var 5)) (var 9) in
-        let term2 = add (div (var 1) (var 5)) (div (var 1) (var 5)) in
-        let (res, residual1, residual2) =
-          Index_raw.Internal_for_tests.mscg term1 term2
-        in
-        match to_native res with
-        | Add (Var 0, Var 4) -> (
-            let lexpr1 = Subst.eval_exn 0 residual1 in
-            let rexpr1 = Subst.eval_exn 0 residual2 in
-            let lexpr2 = Subst.eval_exn 4 residual1 in
-            let rexpr2 = Subst.eval_exn 4 residual2 in
-            (match (to_native lexpr1, to_native rexpr1) with
-            | (Mul (Var 1, Var 5), Div (Var 1, Var 5)) -> ()
-            | _ -> Alcotest.fail "mscg-case2: wrong subterm") ;
-            match (to_native lexpr2, to_native rexpr2) with
-            | (Var 9, Div (Var 1, Var 5)) -> ()
-            | _ -> Alcotest.fail "mscg-case2: wrong subterm")
-        | _ -> Alcotest.fail "mscg-case2: wrong result")
-
-  let mkgen ?(start = 0) () =
-    let c = ref start in
-    fun () ->
-      let v = !c in
-      incr c ;
-      Index_raw.Internal_for_tests.indicator v
-
-  let mscg_nofail =
-    QCheck2.Test.make
-      ~name:"mscg-subst-nofail"
-      ~count:1000
-      (QCheck2.Gen.pair Arith.subst_gen Arith.subst_gen)
-      (fun (subst1, subst2) ->
-        try
-          ignore
-            (Index_raw.Internal_for_tests.mscg_subst
-               subst1
-               subst2
-               (mkgen ~start:(-1000) ())) ;
-          true
-        with _ -> false)
-    |> QCheck_alcotest.to_alcotest
-
-  let mscg_disjoint_support_empty =
-    QCheck2.Test.make
-      ~name:"mscg-disjoint-support-empty"
-      ~count:1000
-      Arith.subst_gen
-      (fun subst ->
-        let subst' =
-          let pairs = Subst.to_seq subst |> List.of_seq in
-          let len = List.length pairs in
-          List.map
-            (fun (i, t) -> (i + Index_raw.Internal_for_tests.indicator len, t))
-            pairs
-          |> List.to_seq |> Subst.of_seq
-        in
-        let (result, _, _) =
-          Index_raw.Internal_for_tests.mscg_subst
-            subst
-            subst'
-            (mkgen ~start:1000 ())
-        in
-        Subst.is_empty result)
-    |> QCheck_alcotest.to_alcotest
-
-  let mscg_subst =
-    Alcotest.test_case "mscg-subst-example" `Quick (fun () ->
-        (*
-         Example drawn from the handbook of automated reasoning
-         let sigma1 = *1 = g(a), *2 = f(c, x1), *3 = g(c)
-         let sigma2 = *1 = g(b), *2 = x1, *3 = g(x2)
-         let rho = *1 = g( *4 ), *3 = g(x5)
-         let sigma1/rho = *2 = f(c, x1), *4 = a, *5 = c
-         let sigma2/rho = *2 = x1, *4 = b, *5 = x2
-       *)
-        let a = Arith.float 1.0 in
-        let b = Arith.float 2.0 in
-        let c = Arith.float 3.0 in
-        let x1 = var 1 in
-        let x2 = var 2 in
-        let subst1 =
-          [ (Index_raw.Internal_for_tests.indicator 1, neg a);
-            (Index_raw.Internal_for_tests.indicator 2, add c x1);
-            (Index_raw.Internal_for_tests.indicator 3, neg c) ]
-          |> List.to_seq |> Subst.of_seq
-        in
-        let subst2 =
-          [ (Index_raw.Internal_for_tests.indicator 1, neg b);
-            (Index_raw.Internal_for_tests.indicator 2, x1);
-            (Index_raw.Internal_for_tests.indicator 3, neg x2) ]
-          |> List.to_seq |> Subst.of_seq
-        in
-        let (mscg, _residual1, _residual2) =
-          Index_raw.Internal_for_tests.mscg_subst
-            subst1
-            subst2
-            (mkgen ~start:4 ())
-        in
-        let assert_eq_subst map k v =
-          match Subst.eval k map with
-          | None ->
-              Alcotest.failf "mscg-subst: %d not found in %a@." k Subst.pp map
-          | Some v' ->
-              if Expr.equal v v' then ()
-              else
-                Alcotest.failf
-                  "mscg-subst: at %d: expected %a, found %a@."
-                  k
-                  Expr.pp
-                  v
-                  Expr.pp
-                  v'
-        in
-        assert_eq_subst
-          mscg
-          (Index_raw.Internal_for_tests.indicator 1)
-          (neg (var (Index_raw.Internal_for_tests.indicator 4))) ;
-        assert_eq_subst
-          mscg
-          (Index_raw.Internal_for_tests.indicator 3)
-          (neg (var (Index_raw.Internal_for_tests.indicator 5))))
-end
-
 module Make_shared_test
     (Index : Index_signature)
     (Name : sig
@@ -365,22 +199,15 @@ struct
   end
 end
 
-module Shared_reference =
-  Make_shared_test
-    (Index)
-    (struct
-      let name = "ref"
-    end)
-
 module Shared_efficient =
   Make_shared_test
-    (Index2)
+    (Index)
     (struct
       let name = "eff"
     end)
 
 module Overlapping_vars_test = struct
-  module I = Index2_raw
+  module I = Index
 
   let internal_to_native internal_term =
     I.reduce
@@ -401,7 +228,7 @@ module Overlapping_vars_test = struct
     let acc = ref [] in
     I.iter_unifiable_transient
       (fun term v ->
-        (* if Index2.Internal_term.is_cyclic term then () *)
+        (* if Index.Internal_term.is_cyclic term then () *)
         (* else *)
         acc := (internal_to_native term, v) :: !acc)
       index
@@ -504,9 +331,12 @@ module Test_against_reference (I : Index_signature) = struct
       query ;
     !acc
 
+  let count = 100_000
+
   let unification =
     QCheck2.Test.make
       ~name:"unification"
+      ~count
       Gen.(tup2 gen gen_terms)
       (fun (query, terms) ->
         let index = I.create () in
@@ -555,7 +385,7 @@ module Test_against_reference (I : Index_signature) = struct
     QCheck2.Test.make
       ~name:"generalize"
       ~count
-      Gen.(no_shrink (tup2 gen gen_terms))
+      Gen.(tup2 gen gen_terms)
       (fun (query, terms) ->
         let index = I.create () in
         let baseline_index = Reference.create () in
@@ -635,7 +465,7 @@ module Test_against_reference (I : Index_signature) = struct
     |> QCheck_alcotest.to_alcotest
 end
 
-module Test_against_efficient = Test_against_reference (Index2)
+module Test_against_efficient = Test_against_reference (Index)
 
 module Regression_checks = struct
   let regr1 =
@@ -646,16 +476,16 @@ module Regression_checks = struct
             mul (sub (float 0.5) (float 0.5)) (float 0.5);
             mul (sub (float 0.5) (float 0.5)) (sub (var 0) (float 0.5)) ]
         in
-        let index = Index2.create () in
-        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
         let query = mul (var 3) (var 3) in
         let acc = ref [] in
-        Index2.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
+        Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
         let expected = mul (float 0.5) (float 0.5) in
         match !acc with
         | [t] when Expr.equal t expected -> ()
         | got ->
-            Format.printf "%a@." (Index2.pp Fmt.int) index ;
+            Format.printf "%a@." (Index.pp Fmt.int) index ;
             Alcotest.failf
               "got: %a, expected: %a"
               (Fmt.Dump.list Expr.pp)
@@ -675,16 +505,16 @@ module Regression_checks = struct
             div (div (float 1.5) (float 1.5)) (div (float 1.5) (var 0)) ]
         in
 
-        let index = Index2.create () in
-        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
         let query = div (var 3) (var 3) in
         let acc = ref [] in
-        Index2.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
+        Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
         let expected = div h h in
         match !acc with
         | [t] when Expr.equal t expected -> ()
         | got ->
-            Format.printf "%a@." (Index2.pp Fmt.int) index ;
+            Format.printf "%a@." (Index.pp Fmt.int) index ;
             Alcotest.failf
               "got: %a, expected: %a"
               (Fmt.Dump.list Expr.pp)
@@ -701,13 +531,13 @@ module Regression_checks = struct
               (neg (add (float 0.5) (neg (add (var 18) (var 84)))))
               (float 9.5) ]
         in
-        let index = Index2.create () in
-        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
         let query =
           sub (div (float 8.5) (sub (float 35.5) (neg (float 1.5)))) (var 3)
         in
         let acc = ref [] in
-        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        Index.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
         let got = !acc in
         let expected = [] in
         if alpha_eq_list got expected then ()
@@ -983,11 +813,11 @@ module Regression_checks = struct
               0 ) ]
           |> List.map fst
         in
-        let index = Index2.create () in
-        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
         let query = sub (var 2) (var 9) in
         let acc = ref [] in
-        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        Index.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
         let got = !acc in
         let expected =
           [ var 0;
@@ -1023,13 +853,65 @@ module Regression_checks = struct
   let regr5 =
     Alcotest.test_case "regr5_generalize" `Quick (fun () ->
         let keys = [var 0] in
-        let index = Index2.create () in
-        List.iteri (fun i t -> Index2.insert t i index) keys ;
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
         let query = add (float 1.0) (var 0) in
         let acc = ref [] in
-        Index2.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        Index.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
         let got = !acc in
         let expected = [var 0] in
+        if alpha_eq_list got expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff got expected in
+          Alcotest.failf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
+
+  let regr6 =
+    Alcotest.test_case "regr5_generalize" `Quick (fun () ->
+        let keys = [sub (var 3) (mul (var 0) (var 3))] in
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
+        let query = sub (var 3) (mul (float 0.5) (float 0.5)) in
+        let acc = ref [] in
+        Index.iter_generalize (fun term _ -> acc := term :: !acc) index query ;
+        let got = !acc in
+        let expected = [] in
+        if alpha_eq_list got expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff got expected in
+          Alcotest.failf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
+
+  let regr7 =
+    Alcotest.test_case "regr7_unification" `Quick (fun () ->
+        let keys = [mul (var 5) (sub (float 0.5) (float 1.5))] in
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
+        let query = mul (var 0) (sub (var 5) (var 0)) in
+        let acc = ref [] in
+        Index.iter_unifiable (fun term _ -> acc := term :: !acc) index query ;
+        let got = !acc in
+        let expected = [] in
         if alpha_eq_list got expected then ()
         else (
           Format.eprintf
@@ -1050,21 +932,9 @@ end
 let () =
   Alcotest.run
     "index"
-    [ ("mscg-properties", Mscg_tests.[diag_idempotent; diag_commutative]);
-      ("mscg-cases", Mscg_tests.[mscg_case0; mscg_case1; mscg_case2]);
-      ( "mscg-subst",
-        Mscg_tests.[mscg_nofail; mscg_disjoint_support_empty; mscg_subst] );
-      ( "subst-tree",
-        [ Shared_reference.subst_tree_insert_terms;
-          Shared_reference.subst_tree_insert_terms2;
-          Shared_efficient.subst_tree_insert_terms;
+    [ ( "subst-tree",
+        [ Shared_efficient.subst_tree_insert_terms;
           Shared_efficient.subst_tree_insert_terms2 ] );
-      ( "index-basic-ref",
-        Shared_reference.Query_tests.
-          [ index_basic;
-            index_cant_overwrite;
-            index_query_generalize;
-            index_query_specialize ] );
       ( "index-basic-eff",
         Shared_efficient.Query_tests.
           [ index_basic;
@@ -1072,6 +942,7 @@ let () =
             index_query_generalize;
             index_query_specialize;
             Overlapping_vars_test.index_overlapping_vars ] );
-      ("regressions", Regression_checks.[regr1; regr2; regr3; regr5; regr4]);
+      ( "regressions",
+        Regression_checks.[regr1; regr2; regr3; regr5; regr4; regr6; regr7] );
       ( "test-against-reference",
         Test_against_efficient.[unification; generalize; specialize] ) ]

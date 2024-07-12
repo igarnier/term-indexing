@@ -41,7 +41,6 @@ end
 
 (**/**)
 
-module Slow_index = Slow_index
 module Int_option = Int_option
 
 (**/**)
