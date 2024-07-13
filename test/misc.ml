@@ -4,7 +4,7 @@
 
 module Stub () = struct
   open Arith
-  module I = Index2_raw
+  module I = Index
 
   let index = I.create ()
 

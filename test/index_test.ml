@@ -877,7 +877,7 @@ module Regression_checks = struct
             right))
 
   let regr6 =
-    Alcotest.test_case "regr5_generalize" `Quick (fun () ->
+    Alcotest.test_case "regr6_generalize" `Quick (fun () ->
         let keys = [sub (var 3) (mul (var 0) (var 3))] in
         let index = Index.create () in
         List.iteri (fun i t -> Index.insert t i index) keys ;
@@ -927,6 +927,68 @@ module Regression_checks = struct
             left
             (Fmt.Dump.list Expr.pp_sexp)
             right))
+
+  let regr8 =
+    Alcotest.test_case "regr8_generalize" `Quick (fun () ->
+        let keys = [add (var 0) (var 0)] in
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
+        let query = add (float 1.0) (var 0) in
+        let acc = ref [] in
+        Index.iter_generalize_transient
+          (fun term _ ->
+            let subst = Index.get_subst term in
+            acc := (Index.to_term term, subst) :: !acc)
+          index
+          query ;
+        let got = !acc in
+        let expected = [] in
+        if alpha_eq_list (List.map fst got) expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list (Fmt.Dump.pair Expr.pp_sexp Subst.pp))
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff (List.map fst got) expected in
+          Alcotest.failf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
+
+  let regr9 =
+    Alcotest.test_case "regr9_generalize" `Quick (fun () ->
+        let keys = [add (var 0) (var 1)] in
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
+        let query = add (var 1) (var 0) in
+        let acc = ref [] in
+        Index.iter_generalize_transient
+          (fun term _ ->
+            let subst = Index.get_subst term in
+            acc := (Index.to_term term, subst) :: !acc)
+          index
+          query ;
+        let got = !acc in
+        let expected = [add (var 0) (var 1)] in
+        if alpha_eq_list (List.map fst got) expected then ()
+        else (
+          Format.eprintf
+            "got: %a@.expected: %a@."
+            (Fmt.Dump.list (Fmt.Dump.pair Expr.pp_sexp Subst.pp))
+            got
+            (Fmt.Dump.list Expr.pp_sexp)
+            expected ;
+          let (left, right) = alpha_eq_list_diff (List.map fst got) expected in
+          Format.eprintf
+            "shouldn't have: %a@.should have: %a@."
+            (Fmt.Dump.list Expr.pp_sexp)
+            left
+            (Fmt.Dump.list Expr.pp_sexp)
+            right))
 end
 
 let () =
@@ -943,6 +1005,7 @@ let () =
             index_query_specialize;
             Overlapping_vars_test.index_overlapping_vars ] );
       ( "regressions",
-        Regression_checks.[regr1; regr2; regr3; regr5; regr4; regr6; regr7] );
+        Regression_checks.
+          [regr1; regr2; regr3; regr5; regr4; regr6; regr7; regr8; regr9] );
       ( "test-against-reference",
         Test_against_efficient.[unification; generalize; specialize] ) ]
