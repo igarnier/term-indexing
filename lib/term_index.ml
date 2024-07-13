@@ -37,6 +37,8 @@ end = struct
   let uid r = r.uid
 end
 
+module IS = Set.Make (Int)
+
 module Make
     (P : Intf.Signature)
     (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
@@ -82,8 +84,6 @@ end = struct
     and t = desc iref
 
     type var_table = (int, t) Hashtbl.t
-
-    module IS = Set.Make (Int)
 
     module Pp = struct
       let to_tree term =
@@ -550,13 +550,11 @@ end = struct
   end
 
   module Internal_for_tests = struct
-    module Int_set = Set.Make (Int)
-
     type subst = isubst
 
     let pp_subst = pp_subst
 
-    exception Not_well_scoped of internal_term * Int_set.t
+    exception Not_well_scoped of internal_term * IS.t
 
     exception Not_properly_unset
 
@@ -573,23 +571,23 @@ end = struct
 
     let rec well_scoped_subst subst in_scope acc =
       match subst with
-      | [] -> Int_set.union acc in_scope
+      | [] -> IS.union acc in_scope
       | (v, t) :: rest ->
           let t_ivars = Internal_term.ivars t |> List.map (fun r -> uid r) in
-          if not (Int_set.mem (uid v) in_scope) then
+          if not (IS.mem (uid v) in_scope) then
             raise (Not_well_scoped (v, in_scope))
           else
-            let acc = Int_set.union acc (Int_set.of_list t_ivars) in
+            let acc = IS.union acc (IS.of_list t_ivars) in
             well_scoped_subst rest in_scope acc
 
     let rec well_scoped_node node in_scope =
       let subst = node.head in
-      let in_scope = well_scoped_subst subst in_scope Int_set.empty in
+      let in_scope = well_scoped_subst subst in_scope IS.empty in
       if not (non_trivial subst) then raise (Trivial_subst subst) ;
       Vec.iter (fun node -> well_scoped_node node in_scope) node.subtrees
 
     let well_scoped index =
-      let in_scope = Int_set.singleton (uid index.root) in
+      let in_scope = IS.singleton (uid index.root) in
       Vec.iter (fun node -> well_scoped_node node in_scope) index.nodes
 
     let check_invariants index =
@@ -668,15 +666,15 @@ end = struct
       | (IVar, ((Prim _ | Var _) as desc2)) ->
           term1 := desc2 ;
           ((term1, Internal_term.IVar) :: undo_stack, true)
+      | (((Prim _ | Var _) as desc1), IVar) ->
+          term2 := desc1 ;
+          ((term2, IVar) :: undo_stack, true)
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
           let fresh = Internal_term.(Var (-1, ref IVar)) in
           term1 := fresh ;
           term2 := fresh ;
           ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
-      | (((Prim _ | Var _) as desc1), IVar) ->
-          term2 := desc1 ;
-          ((term2, IVar) :: undo_stack, true)
       | (EVar, _) | (_, EVar) -> assert false
 
     and unify_arrays undo_stack args1 args2 i =
@@ -911,6 +909,7 @@ end = struct
     | Specialize -> Fmt.string fmtr "Specialize"
     | Generalize -> Fmt.string fmtr "Generalize"
 
+  (* precondition: the domain of node.head has no [IVar] *)
   let rec iter_query_node f node root qkind =
     let (undo_stack, success) =
       match qkind with
@@ -925,7 +924,9 @@ end = struct
     List.iter (fun (v, d) -> v := d) undo_stack
 
   let iter_query f (index : 'a t) (qkind : query_kind) (query : internal_term) =
+    (* [query] is either a Prim or a Var. *)
     index.root := !query ;
+    (* The toplevel substitution of the index has domain equal to [index.root]. *)
     Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
     index.root := IVar
 

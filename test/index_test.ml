@@ -983,7 +983,7 @@ module Regression_checks = struct
             (Fmt.Dump.list Expr.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff (List.map fst got) expected in
-          Format.eprintf
+          Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
             (Fmt.Dump.list Expr.pp_sexp)
             left
