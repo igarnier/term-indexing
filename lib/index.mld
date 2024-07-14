@@ -140,18 +140,18 @@ let neg_patt = Pattern.(prim Prim.Neg (float_patt @. list_empty))
 
 Upon detecting such subterms, we will need to reduce them. The following illustrates how to do so using {{!Term_indexing.Intf.Term.destruct}[Term.destruct]}, which performs pattern matching on terms. It takes the following arguments:
 {ul
-{- the term to be analyzed}
 {- a function to be called if the term is a primitive, to which the primitive and subterms are passed}
 {- a function to be called if the term is a variable, to which the variable is passed.}
+{- the term to be analyzed}
 }
 
 [get_float] extracts the floating point value out of a [Float] term, or returns [None] if not possible.
 {[
 let get_float (term : Term.t) : float option =
   Term.destruct
-    term
     (fun prim _ -> match prim with Prim.Float f -> Some f | _ -> None)
     (fun _ -> None)
+    term
 ]}
 
 [reduce] performs a step of constant folding if possible.
@@ -159,7 +159,6 @@ let get_float (term : Term.t) : float option =
 {[
 let reduce (term : Term.t) : Term.t option =
   Term.destruct
-    term
     (fun prim operands ->
       match (prim, operands) with
       | ((Add | Mul), [| l; r |]) ->
@@ -174,6 +173,7 @@ let reduce (term : Term.t) : Term.t option =
           Option.bind (get_float x) @@ fun x -> Option.some (float (-.x))
       | _ -> Option.none)
     (fun _ -> Option.none)
+    term
 ]}
 
 Constant folding iteratively looks for subterms to simplify until none is left.
