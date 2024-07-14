@@ -29,8 +29,19 @@ let fold_variables =
       let expected = [([1], 1); ([0], 0)] in
       Alcotest.(check (list (pair (list int) int))) "variables" expected vars)
 
+let to_dispenser xs =
+  let s = ref xs in
+  fun () ->
+    match !s () with
+    | Seq.Nil -> None
+    | Cons (x, xs) ->
+        s := xs ;
+        Some x
+
+let rec seq_ints i () = Seq.Cons (i, seq_ints (i + 1))
+
 let ints () =
-  let dispenser = Seq.to_dispenser (Seq.ints 0) in
+  let dispenser = to_dispenser (seq_ints 0) in
   fun () -> Option.get (dispenser ())
 
 let canon_variable_count =

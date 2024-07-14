@@ -5,6 +5,9 @@ and 'prim desc = Prim of 'prim * 'prim term array * Int_option.t | Var of int
 
 let rec pp pp_prim fmtr term =
   let open Format in
+  let pp_print_array ~pp_sep pp_elt fmtr arr =
+    Format.pp_print_list ~pp_sep pp_elt fmtr (Array.to_list arr)
+  in
   match term.Hashcons.node with
   | Var i -> fprintf fmtr "V(%d)" i
   | Prim (prim, [||], _) -> fprintf fmtr "%a" pp_prim prim
@@ -21,6 +24,9 @@ let rec pp pp_prim fmtr term =
 
 let rec pp_sexp pp_prim fmtr term =
   let open Format in
+  let pp_print_array ~pp_sep pp_elt fmtr arr =
+    Format.pp_print_list ~pp_sep pp_elt fmtr (Array.to_list arr)
+  in
   match term.Hashcons.node with
   | Var i -> fprintf fmtr "(var %d)" i
   | Prim (prim, [||], _) -> fprintf fmtr "%a" pp_prim prim

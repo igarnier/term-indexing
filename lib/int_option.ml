@@ -11,7 +11,7 @@ let elim x ifnone ifsome = if x = none then ifnone else ifsome (x - 1)
 
 let is_none x = x = none
 
-let max = Int.max
+let max x y = if x > y then x else y
 
 let pp fmtr x =
   if is_none x then Format.pp_print_string fmtr "none"

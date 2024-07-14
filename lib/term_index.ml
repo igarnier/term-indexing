@@ -322,7 +322,7 @@ end = struct
 
   let of_term index term = Internal_term.of_term index.var_table term
 
-  let subst_is_empty = List.is_empty
+  let subst_is_empty = function [] -> true | _ -> false
 
   let generalize subst_term node_term residual_subst residual_node =
     let residual_subst = (node_term, subst_term) :: residual_subst in
@@ -345,18 +345,7 @@ end = struct
     match (!subst_term, !node_term) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
         if P.equal prim1 prim2 then
-          let (residual_subst, residual_node) =
-            Seq.fold_left2
-              (fun (residual_subst, residual_node) arg1 arg2 ->
-                let (residual_subst, residual_node) =
-                  mscg arg1 arg2 residual_subst residual_node
-                in
-                (residual_subst, residual_node))
-              (residual_subst, residual_node)
-              (Array.to_seq args1)
-              (Array.to_seq args2)
-          in
-          (residual_subst, residual_node)
+          mscg_array args1 args2 residual_subst residual_node 0
         else generalize subst_term node_term residual_subst residual_node
     | (Var (v1, _), Var (v2, _)) ->
         if Int.equal v1 v2 then (residual_subst, residual_node)
@@ -369,6 +358,14 @@ end = struct
         (* [node_term] is already the mscg *)
         ((node_term, subst_term) :: residual_subst, residual_node)
     | (EVar, _) | (_, EVar) -> assert false
+
+  and mscg_array args1 args2 residual_subst residual_node i =
+    if i = Array.length args1 then (residual_subst, residual_node)
+    else
+      let (residual_subst, residual_node) =
+        mscg args1.(i) args2.(i) residual_subst residual_node
+      in
+      mscg_array args1 args2 residual_subst residual_node (i + 1)
 
   let top_symbol_disagree (t1 : internal_term) (t2 : internal_term) =
     match (!t1, !t2) with
