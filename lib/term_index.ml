@@ -786,7 +786,7 @@ end = struct
               (* Variable was already instantiated with a prim, check
                  that instances properly specialize. Note that [repr] is not
                  a query term and may contain [IVar] and [Var] nodes. *)
-              check_specialize undo_stack repr term2
+              check_equality undo_stack repr term2
           | Var _ ->
               (* Variable was was already mapped to a term variable *)
               (undo_stack, false))

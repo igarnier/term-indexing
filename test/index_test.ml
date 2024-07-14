@@ -989,6 +989,26 @@ module Regression_checks = struct
             left
             (Fmt.Dump.list Expr.pp_sexp)
             right))
+
+  let regr10 =
+    Alcotest.test_case "regr10_specialize" `Quick (fun () ->
+        let keys = [(mul (neg (var 1)) (neg (var 1)), 79)] |> List.map fst in
+        let index = Index.create () in
+        List.iteri (fun i t -> Index.insert t i index) keys ;
+        let query = mul (var 5) (var 5) in
+        let acc = ref [] in
+        Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
+        let expected = mul (neg (var 1)) (neg (var 1)) in
+        match !acc with
+        | [t] when Expr.equal t expected -> ()
+        | got ->
+            Format.printf "@.%a@." (Index.pp Fmt.int) index ;
+            Alcotest.failf
+              "got: %a, expected: %a"
+              (Fmt.Dump.list Expr.pp)
+              got
+              Expr.pp
+              expected)
 end
 
 let () =
@@ -1006,6 +1026,7 @@ let () =
             Overlapping_vars_test.index_overlapping_vars ] );
       ( "regressions",
         Regression_checks.
-          [regr1; regr2; regr3; regr5; regr4; regr6; regr7; regr8; regr9] );
+          [regr1; regr2; regr3; regr5; regr4; regr6; regr7; regr8; regr9; regr10]
+      );
       ( "test-against-reference",
         Test_against_efficient.[unification; generalize; specialize] ) ]
