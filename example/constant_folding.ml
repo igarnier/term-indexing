@@ -55,13 +55,12 @@ let neg_patt = Pattern.(prim Prim.Neg (float_patt @. list_empty))
 
 let get_float (term : Term.t) : float option =
   Term.destruct
-    term
     (fun prim _ -> match prim with Prim.Float f -> Some f | _ -> None)
     (fun _ -> None)
+    term
 
 let reduce (term : Term.t) : Term.t option =
   Term.destruct
-    term
     (fun prim operands ->
       match (prim, operands) with
       | ((Add | Mul), [| l; r |]) ->
@@ -76,6 +75,7 @@ let reduce (term : Term.t) : Term.t option =
           Option.bind (get_float x) @@ fun x -> Option.some (float (-.x))
       | _ -> Option.some term)
     (fun _ -> Option.some term)
+    term
 
 let rec rewrite_until_fixpoint term =
   let matches = Pattern.first_match [add_patt; mul_patt; neg_patt] term in
