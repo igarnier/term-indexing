@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>index (term-indexing.index)</title><meta charset="utf-8"/><link rel="stylesheet" href="../odoc.support/odoc.css"/><meta name="generator" content="odoc 2.4.2"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><link rel="stylesheet" href="../odoc.support/katex.min.css"/><script src="../odoc.support/katex.min.js"></script><script>
+//<![CDATA[
+
+          document.addEventListener("DOMContentLoaded", function () {
+            var elements = Array.from(document.getElementsByClassName("odoc-katex-math"));
+            for (var i = 0; i < elements.length; i++) {
+              var el = elements[i];
+              var content = el.textContent;
+              var new_el = document.createElement("span");
+              new_el.setAttribute("class", "odoc-katex-math-rendered");
+              var display = el.classList.contains("display");
+              katex.render(content, new_el, { throwOnError: false, displayMode: display });
+              el.replaceWith(new_el);
+            }
+          });
+        
+//]]>
+</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – term-indexing</nav><header class="odoc-preamble"><h1 id="term-indexing"><a href="#term-indexing" class="anchor"></a>Term indexing</h1><p>This library implements some tools to manipulate and index <a href="https://en.wikipedia.org/wiki/Term_(logic)">first-order terms</a>. This page introduces the library with some basic examples. If you're ready to dive in the API, look at <a href="Term_indexing/index.html"><code>Term_indexing</code></a>, especially the functor <a href="Term_indexing/Make/index.html"><code>Term_indexing.Make</code></a>.</p></header><nav class="odoc-toc"><ul><li><a href="#hash-consed-first-order-terms">Hash-consed first-order terms</a></li><li><a href="#folding-over-terms">Folding over terms</a></li><li><a href="#rewriting">Rewriting</a></li><li><a href="#substitutions">Substitutions</a></li><li><a href="#intermezzo:-the-refinement-preorder-on-terms">Intermezzo: the refinement preorder on terms</a></li><li><a href="#unification">Unification</a></li><li><a href="#indexing">Indexing</a></li></ul></nav><div class="odoc-content"><h2 id="hash-consed-first-order-terms"><a href="#hash-consed-first-order-terms" class="anchor"></a>Hash-consed first-order terms</h2><p>A first-order term is either</p><ul><li>a variable (represented as an integer), or</li><li>a primitive symbol applied to a list of sub-terms whose length correspond to the <em>arity</em> of the symbol.</li></ul><p>Primitive symbols and their arities are specified by a <a href="Term_indexing/Intf/module-type-Signature/index.html" title="Term_indexing.Intf.Signature"><code>signature</code></a>.</p><p>For instance, arithmetic expressions such as <code class="odoc-katex-math">x_0 + x_1 * x_1</code> can be represented as terms constructed with primitives for addition, multiplication, etc. Let us define the corresponding signature.</p><pre class="language-ocaml"><code>open Term_indexing
+
+(* The type of primitive symbols *)
+type prim = Add | Mul | Neg | Float of float
+
+(* [Prim] implements [Intf.Signature].
+   We use the [Stdlib]'s polymorphic comparison and hash operators for simplicity.  *)
+module Prim : Intf.Signature with type t = prim = struct
+  type t = prim
+
+  let compare (x : t) (y : t) = Stdlib.compare x y
+
+  let equal (x : t) (y : t) = Stdlib.( = ) x y
+
+  let hash = Hashtbl.hash
+
+  let pp fmtr = function
+    | Add -&gt; Format.fprintf fmtr &quot;Add&quot;
+    | Mul -&gt; Format.fprintf fmtr &quot;Mul&quot;
+    | Neg -&gt; Format.fprintf fmtr &quot;Neg&quot;
+    | Float f -&gt; Format.fprintf fmtr &quot;%.1f&quot; f
+
+  (* Each primitive is associated to an arity, which maps each constructor to its number
+     of expected arguments;
+     e.g. addition is a binary operation, negation is a unary operation and
+     constants are 0-ary.  *)
+  let arity = function Add | Mul -&gt; 2 | Neg -&gt; 1 | Float _ -&gt; 0
+end</code></pre><p>The functor <a href="Term_indexing/Make/index.html"><code>Term_indexing.Make</code></a> packs all features of the library under a single functor taking an argument of type <a href="Term_indexing/Intf/module-type-Signature/index.html" title="Term_indexing.Intf.Signature"><code>Intf.Signature</code></a>.</p><pre class="language-ocaml"><code>module Pack = Term_indexing.Make (Prim)
+open Pack</code></pre><p>The module <code>Term</code> contained in <code>Pack</code> provides operations to create and manipulate <em>hash-consed</em> terms over the given signature (see <a href="Term_indexing/Intf/module-type-Term/index.html" title="Term_indexing.Intf.Term"><code>Intf.Term</code></a>). Hash-consing is a technique that ensures that terms are allocated at most once: it is guaranteed that structurally equal terms are physically equal. Terms are constructed using the functions <a href="Term_indexing/Intf/module-type-Term/index.html#val-prim" title="Term_indexing.Intf.Term.prim"><code>Term.prim</code></a> for primitive applications and <a href="Term_indexing/Intf/module-type-Term/index.html#val-var" title="Term_indexing.Intf.Term.var"><code>Term.var</code></a> for variables.</p><p>Let us define some convenient wrappers to create terms. Note that the correctness of arities is dynamically checked by <a href="Term_indexing/Intf/module-type-Term/index.html#val-prim" title="Term_indexing.Intf.Term.prim"><code>Term.prim</code></a>.</p><pre class="language-ocaml"><code>let add x y = Term.prim Add [| x; y |]
+
+let mul x y = Term.prim Mul [| x; y |]
+
+let neg x = Term.prim Neg [| x |]
+
+let float f = Term.prim (Prim.Float f) [||]
+
+let var s = Term.var s</code></pre><p>The mathematical expression <code class="odoc-katex-math">x_0 + x_1 * x_1</code> can be represented by the term</p><pre class="language-ocaml"><code>let t = add (var 0) (mul (var 1) (var 1))</code></pre><h2 id="folding-over-terms"><a href="#folding-over-terms" class="anchor"></a>Folding over terms</h2><p><a href="Term_indexing/Term/Make_hash_consed/index.html" title="Term_indexing.Term.Make_hash_consed"><code>Term</code></a> implements functions to fold over terms and perform basic rewriting operations. Rewriting consists in replacing a subterm at a given <a href="Term_indexing/Path/index.html#type-t" title="Term_indexing.Path.t"><code>Path.t</code></a> with anoter term. For instance, for <code>t = add (var 0) (mul (var 1) (var 1))</code>:</p><ul><li>the subterm at <code>p = Path.root</code> is <code>t</code> itself</li><li>the subterm at <code>p = at_index 0 Path.root</code> is <code>var 0</code></li><li>the subterm at <code>p = at_index 1 Path.root</code> is <code>mul (var 1) (var 1)</code></li><li>the subterm at <code>p = at_index 0 (at_index 1 Path.root)</code> is <code>(var 1)</code></li></ul><p>The function <a href="Term_indexing/Term/index.html#val-fold" title="Term_indexing.Term.fold"><code>Term.fold</code></a> allows to fold over all subterms of <code>t</code> along with their paths in <code>t</code>. Let's try:</p><pre class="language-ocaml"><code>let all_subterms = Term.fold (fun subt p acc -&gt; (p, subt) :: acc) [] t
+
+let () =
+  List.iter
+    (fun (p, subt) -&gt; Format.printf &quot;%a -&gt; %a@.&quot; Path.pp p Term.pp subt)
+    all_subterms</code></pre><pre>1 -&gt; 1 -&gt; * -&gt; V(1)
+0 -&gt; 1 -&gt; * -&gt; V(1)
+1 -&gt; * -&gt; Mul(V(1), V(1))
+0 -&gt; * -&gt; V(0)
+* -&gt; Add(V(0), Mul(V(1), V(1)))</pre><h2 id="rewriting"><a href="#rewriting" class="anchor"></a>Rewriting</h2><p>We will illustrate rewriting by implementing some toy constant folding. The <a href="Term_indexing/Pattern/Make/index.html" title="Term_indexing.Pattern.Make"><code>Pattern</code></a> module provides facilities to search for subterms having some particular shape.</p><p>We then define some patterns corresponding to terms that can be folded.</p><pre class="language-ocaml"><code>(* A pattern matching any float constant. [prim_pred] is a generic predicate on primitives. *)
+let float_patt =
+  Pattern.(prim_pred (function Float _ -&gt; true | _ -&gt; false) list_empty)
+
+(* A pattern matching an addition of float constants. *)
+let add_patt = Pattern.(prim Prim.Add (float_patt @. float_patt @. list_empty))
+
+(* A pattern matching a multiplication of float constants. *)
+let mul_patt = Pattern.(prim Prim.Add (float_patt @. float_patt @. list_empty))
+
+(* A pattern matching negation of a float constant. *)
+let neg_patt = Pattern.(prim Prim.Neg (float_patt @. list_empty))</code></pre><p>Upon detecting such subterms, we will need to reduce them. The following illustrates how to do so using <a href="Term_indexing/Intf/module-type-Term/index.html#val-destruct" title="Term_indexing.Intf.Term.destruct"><code>Term.destruct</code></a>, which performs pattern matching on terms. It takes the following arguments:</p><ul><li>a function to be called if the term is a primitive, to which the primitive and subterms are passed</li><li>a function to be called if the term is a variable, to which the variable is passed.</li><li>the term to be analyzed</li></ul><p><code>get_float</code> extracts the floating point value out of a <code>Float</code> term, or returns <code>None</code> if not possible.</p><pre class="language-ocaml"><code>let get_float (term : Term.t) : float option =
+  Term.destruct
+    (fun prim _ -&gt; match prim with Prim.Float f -&gt; Some f | _ -&gt; None)
+    (fun _ -&gt; None)
+    term</code></pre><p><code>reduce</code> performs a step of constant folding if possible.</p><pre class="language-ocaml"><code>let reduce (term : Term.t) : Term.t option =
+  Term.destruct
+    (fun prim operands -&gt;
+      match (prim, operands) with
+      | ((Add | Mul), [| l; r |]) -&gt;
+          Option.bind (get_float l) @@ fun l -&gt;
+          Option.bind (get_float r) @@ fun r -&gt;
+          Option.some
+            (match prim with
+            | Add -&gt; float (l +. r)
+            | Mul -&gt; float (l *. r)
+            | _ -&gt; assert false)
+      | (Neg, [| x |]) -&gt;
+          Option.bind (get_float x) @@ fun x -&gt; Option.some (float (-.x))
+      | _ -&gt; Option.none)
+    (fun _ -&gt; Option.none)
+    term</code></pre><p>Constant folding iteratively looks for subterms to simplify until none is left. <a href="Term_indexing/Intf/module-type-Pattern/index.html#val-first_match" title="Term_indexing.Intf.Pattern.first_match"><code>Pattern.first_matches</code></a> searches the term for an occurrence of a subterm matching any of the patterns in the provided list. If a pattern is found, we perform the rewrite, print the outcome and continue.</p><pre class="language-ocaml"><code>let rec rewrite_until_fixpoint term =
+  let matches = Pattern.first_match [add_patt; mul_patt; neg_patt] term in
+  match matches with
+  | [] -&gt; term
+  | path :: _ -&gt;
+      let rewritten =
+        Term.subst ~term ~path (fun e -&gt;
+            match reduce e with
+            | Some reduced -&gt; reduced
+            | None -&gt; failwith &quot;can't happen&quot;)
+      in
+      Format.printf &quot;%a -&gt; %a@.&quot; Term.pp term Term.pp rewritten ;
+      rewrite_until_fixpoint rewritten</code></pre><p>Let's try this out on some dummy term.</p><pre class="language-ocaml"><code>let expression = add (float 1.0) (add (float 2.0) (mul (float 3.0) (float 4.0)))
+
+let normalized = rewrite_until_fixpoint expression</code></pre><p>The sequence of rewrites is:</p><pre>Add(1.0, Add(2.0, Mul(3.0, 4.0))) -&gt; Add(1.0, Add(2.0, 12.0))
+Add(1.0, Add(2.0, 12.0)) -&gt; Add(1.0, 14.0)
+Add(1.0, 14.0) -&gt; 15.0</pre><h2 id="substitutions"><a href="#substitutions" class="anchor"></a>Substitutions</h2><p>Variables denote placeholders for terms that may replace them. This mechanism is mediated through <em>substitutions</em>, which are finitely supported functions from variables to terms. The following is a substitution mapping</p><ul><li>the variable <code>0</code> to the term <code>float 0.0</code></li><li>the variable <code>1</code> to the term <code>neg (float 42.0)</code></li><li>the variable <code>2</code> to the term <code>float 2.0</code></li></ul><pre class="language-ocaml"><code>let subst =
+  [(0, float 0.0); (1, neg (float 42.0)); (2, float 2.0)]
+  |&gt; List.to_seq |&gt; Subst.of_seq</code></pre><p>The terms associated to each variable in the domain of a substitution can be obtained through <a href="Term_indexing/Intf/module-type-Subst/index.html#val-eval" title="Term_indexing.Intf.Subst.eval"><code>Subst.eval</code></a> (or <a href="Term_indexing/Intf/module-type-Subst/index.html#val-eval_exn" title="Term_indexing.Intf.Subst.eval_exn"><code>Subst.eval_exn</code></a> for the raising variant).</p><pre class="language-ocaml"><code>let () =
+  assert (Option.equal Term.equal (Subst.eval 0 subst) (Some (float 0.0)))
+
+let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)</code></pre><p>One can also apply a substitution to the variables contained in a term using <a href="Term_indexing/Intf/module-type-Subst/index.html#val-lift" title="Term_indexing.Intf.Subst.lift"><code>Subst.lift</code></a>.</p><pre class="language-ocaml"><code>let term = add (var 1) (mul (var 2) (var 2))
+
+let substituted = Subst.lift subst term</code></pre><p>The value <code>substituted</code> is equal to:</p><pre>Add(Neg(42.0), Mul(2.0, 2.0))</pre><h2 id="intermezzo:-the-refinement-preorder-on-terms"><a href="#intermezzo:-the-refinement-preorder-on-terms" class="anchor"></a>Intermezzo: the refinement preorder on terms</h2><p>Applying a substitution to a term intuitively &quot;refines&quot; it. More formally, one can define a preorder <code class="odoc-katex-math">\le</code> on terms where a term <code class="odoc-katex-math">t_1 \le t_2</code> if there exists a substitution <code class="odoc-katex-math">\sigma</code> such that <code class="odoc-katex-math">t_1 = \sigma(t_2)</code>. The maximal (equivalence class of) elements of this preorder are variables, and the minimal elements are ground terms (i.e. terms without variables). (This is a preorder and not a partial order because terms equal modulo variable renaming generalize each other).</p><p>Here is an increasing sequence of terms in the preorder <code class="odoc-katex-math">\le</code>:</p><ul><li>the term <code>t1 = add (float 2.0) (float 2.0)</code> is ground</li><li>the term <code>t1</code> refines <code>t2 = add (var 1) (var 1)</code> via the substitution <code class="odoc-katex-math">1 \mapsto</code> <code>float 2.0</code></li><li>the term <code>t2</code> refines <code>t3 = add (var 1) (var 2)</code> via the substitution <code class="odoc-katex-math">2 \mapsto</code> <code>var 1</code></li><li>the term <code>t3</code> refines <code>var 3</code> via the substitution <code class="odoc-katex-math">3 \mapsto</code> <code>t3</code></li></ul><h2 id="unification"><a href="#unification" class="anchor"></a>Unification</h2><p>Some pairs of terms <code class="odoc-katex-math">t_1, t_2</code> admit a common refinement. Formally, a <em>unifier</em> of <code class="odoc-katex-math">t_1</code> and <code class="odoc-katex-math">t_2</code> is a substitution which equates the two terms. A unification problem is a conjunction of equations between terms and a solution is a substitution which when applied to all terms satisfies all equations.</p><p>The library provides a module to compute such solutions. Unification proceeds on a state that allows to accumulate equations. Let us create an empty state.</p><pre class="language-ocaml"><code>let uf_state = Subst.Unification.empty ()</code></pre><p>One can unify terms using <a href="Term_indexing/Intf/module-type-Subst/Unification/index.html#val-unify" title="Term_indexing.Intf.Subst.Unification.unify"><code>Subst.Unification.unify</code></a>. This function returns <code>None</code> when no unifier can be found, or an updated state in the other case. At any point, we can get a solution from the state using <a href="Term_indexing/Intf/module-type-Subst/Unification/index.html#val-subst" title="Term_indexing.Intf.Subst.Unification.subst"><code>Subst.Unification.subst</code></a> which returns a substitution.</p><pre class="language-ocaml"><code>let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
+
+let t2 = add (var 2) (mul (float 3.0) (float 4.0))
+
+let () =
+  match Subst.Unification.unify t1 t2 uf_state with
+  | None -&gt; failwith &quot;unification failed&quot;
+  | Some uf_state' -&gt;
+      let subst = Subst.Unification.subst uf_state' in
+      Format.printf &quot;%a@.&quot; Subst.pp subst</code></pre><pre>V(1) -&gt; Mul(3.0, 4.0); V(2) -&gt; Mul(1.0, 2.0)</pre><h2 id="indexing"><a href="#indexing" class="anchor"></a>Indexing</h2><p>One sometimes need to associate data to terms. In those case, one may simply use a hash table. However, the preorder structure on terms suggests the possibility to perform richer queries:</p><ul><li>finding all term-value pairs unifiable with the query term</li><li>finding all term-value pairs generalizing the query term</li><li>finding all term-value pairs specializing the query term</li></ul><p>The module <a href="Term_indexing/Intf/module-type-Term_index/index.html" title="Term_indexing.Intf.Term_index"><code>Index</code></a> allows to associate terms to data and perform these queries. In the example, we use dummy integers as data.</p><p>An empty index is created using <a href="Term_indexing/Intf/module-type-Term_index/index.html#val-create" title="Term_indexing.Intf.Term_index.create"><code>Index.create</code></a>.</p><pre class="language-ocaml"><code>let index = Index.create ()</code></pre><p>Keys-value mappings are inserted using <a href="Term_indexing/Intf/module-type-Term_index/index.html#val-insert" title="Term_indexing.Intf.Term_index.insert"><code>Index.insert</code></a>. Inserting a value at a given key overwrites the previous value, if any. One can also use <a href="Term_indexing/Intf/module-type-Term_index/index.html#val-update" title="Term_indexing.Intf.Term_index.update"><code>Index.update</code></a> to access the previous value.</p><pre class="language-ocaml"><code>let keys =
+  [ float 42.0;
+    add (float 1.0) (float 2.0);
+    add (var 1) (mul (float 2.0) (float 3.0));
+    mul (float 1.0) (mul (var 2) (float 4.0));
+    neg (neg (add (float 1.0) (var 3)));
+    neg (neg (float 1.0));
+    neg (float 1.0) ]
+
+let () = List.iteri (fun key -&gt; Index.insert key i index) keys</code></pre><p>The worst-case complexity of insertion is linear. In practice complexity depends heavily on term distribution. One can iterate on all terms stored in the index using <a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter" title="Term_indexing.Intf.Term_index.iter"><code>Index.iter</code></a></p><pre class="language-ocaml"><code>let () =
+  Index.iter
+    (fun key v -&gt; Format.printf &quot;%a -&gt; %d@.&quot; Term.pp key v)
+    index</code></pre><p>Note that the iteration order is not the insertion one:</p><pre>Add(Mul(V(1), 2.0), 2.0) -&gt; 1
+Add(V(1), Mul(2.0, 3.0)) -&gt; 6
+Mul(1.0, Mul(V(2), 4.0)) -&gt; 2
+Neg(Neg(Add(1.0, V(3)))) -&gt; 3
+Neg(Neg(1.0)) -&gt; 4
+Neg(1.0) -&gt; 5</pre><p>One can ask for all terms unifiable with a query term, using <a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter_unifiable" title="Term_indexing.Intf.Term_index.iter_unifiable"><code>Index.iter_unifiable</code></a>:</p><pre class="language-ocaml"><code>let query = add (mul (float 3.0) (var 0)) (var 2)
+
+let () =
+  Index.iter_unifiable
+    (fun key v -&gt; Format.printf &quot;%a -&gt; %d@.&quot; Term.pp key)
+    index
+    query</code></pre><pre>Add(Mul(V(1), 2.0), 2.0)
+Add(V(1), Mul(2.0, 3.0))</pre><p>Note that there are no terms in <code>keys</code> that specialize nor generalize <code>query</code>. However we can try to find all terms specializing <code>neg (var 0)</code>:</p><pre>Neg(Neg(Add(1.0, V(3))))
+Neg(Neg(1.0))
+Neg(1.0)</pre><p>Similarly, we may look for all terms generalizing <code>neg (neg (add (float 1.0) (float 2.0)))</code>. There's a single one:</p><pre>Neg(Neg(Add(1.0, V(3))))</pre><p>If you need maximum performance, it is recommended to use the transient versions of these iterators, which expose directly the underlying term representation and do not perform the conversion to <a href="Term_indexing/Intf/module-type-Term/index.html#type-t" title="Term_indexing.Intf.Term.t"><code>Term.t</code></a>. These are</p><ul><li><a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter_transient" title="Term_indexing.Intf.Term_index.iter_transient"><code>Index.iter_transient</code></a></li><li><a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter_unifiable_transient" title="Term_indexing.Intf.Term_index.iter_unifiable_transient"><code>Index.iter_unifiable_transient</code></a></li><li><a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter_specialize_transient" title="Term_indexing.Intf.Term_index.iter_specialize_transient"><code>Index.iter_specialize_transient</code></a></li><li><a href="Term_indexing/Intf/module-type-Term_index/index.html#val-iter_generalize_transient" title="Term_indexing.Intf.Term_index.iter_generalize_transient"><code>Index.iter_generalize_transient</code></a></li></ul><p>Have a look at the functions manipulating <a href="Term_indexing/Intf/module-type-Term_index/index.html#type-internal_term" title="Term_indexing.Intf.Term_index.internal_term"><code>Index.internal_term</code></a>. In some situations, one can expect one order of magnitude better performance compared to the non-transient iterators. However, do keep in mind that the lifetime of these internal terms ends when the closure passed to the iterator returns!</p></div></body></html>
