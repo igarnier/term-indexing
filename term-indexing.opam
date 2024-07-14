@@ -13,11 +13,11 @@ bug-reports: "http://github.com/igarnier/term-indexing"
 depends: [
   "dune" {>= "3.0"}
   "ocaml" {>= "4.14"}
-  "prbnmcn-cgrph" {= "0.0.2"}
   "hashcons" {>= "1.4.0"}
   "containers" {>= "3.13.1"}
   "printbox" {>= "0.11"}
   "printbox-text" {>= "0.9.0"}
+  "fmt" {>= "0.9.0"}
   "odoc" {with-doc}
 ]
 build: [

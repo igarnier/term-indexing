@@ -17,8 +17,8 @@
  (tags (symbolics rewriting))
  (depends
   (ocaml (>= 4.14))
-  (prbnmcn-cgrph (= 0.0.2))
   (hashcons (>= 1.4.0))
   (containers (>= 3.13.1))
   (printbox (>= 0.11))
-  (printbox-text (>= 0.9.0))))
+  (printbox-text (>= 0.9.0))
+  (fmt (>= 0.9.0))))
