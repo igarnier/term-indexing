@@ -18,6 +18,10 @@ depends: [
   "printbox" {>= "0.11"}
   "printbox-text" {>= "0.9.0"}
   "fmt" {>= "0.9.0"}
+  "alcotest" {>= "0.8.1" & with-test}
+  "qcheck" {>= "0.21" & with-test}
+  "qcheck-core" {>= "0.21" & with-test}
+  "qcheck-alcotest" {>= "0.21" & with-test}
   "odoc" {with-doc}
 ]
 build: [
