@@ -3,6 +3,7 @@ module Path = Path
 module Pattern = Pattern
 module Subst = Subst
 module Term = Term
+module Int_option = Int_option
 module Term_index = Term_index
 
 (** [Make(P)] takes a {{!Term_indexing.Intf.Signature}[signature]} as input and returns
@@ -38,9 +39,3 @@ end = struct
   module Subst = Subst.Make (P) (Default_map) (Term)
   module Index = Term_index.Make (P) (Term) (Subst)
 end
-
-(**/**)
-
-module Int_option = Int_option
-
-(**/**)

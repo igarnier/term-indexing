@@ -48,7 +48,7 @@ module type Map = sig
 
   (** [union m1 m2] is the union of [m1] and [m2].
 
-      @raise Invalid_argument if [m1] and [m2] have overlapping domains.
+      Raises [Invalid_argument] if [m1] and [m2] have overlapping domains.
   *)
   val union : 'a t -> 'a t -> 'a t
 
@@ -117,7 +117,7 @@ module type Pattern = sig
   (** [focus patt] returns a pattern equivalent to [patt] except that a focus mark is added
       on all terms matched by [patt].
 
-      @raise Invalid_pattern if [t] is already a focus. *)
+      Raises [Invalid_pattern] if [t] is already a focus. *)
   val focus : t -> t
 
   (** [list_any] is a list pattern matching any list of terms. *)
@@ -159,7 +159,7 @@ module type Term_core = sig
 
   (** [prim p ts] constructs a term with head equal to [p] and subterms equal to [ts]
 
-      @raise Invalid_argument if the length of [ts] does not match the arity of [p]. *)
+      Raises [Invalid_argument] if the length of [ts] does not match the arity of [p]. *)
   val prim : prim -> t array -> t
 
   (** [var v] construcst a variable [v] *)
@@ -177,7 +177,7 @@ module type Term_core = sig
   (** [get_subterm_fwd t fpth] is the subterm of [t] at position defined by the forward path
       [fpth].
 
-      @raise Get_subterm_oob if the path is out of bounds.
+      Raises [Get_subterm_oob] if the path is out of bounds.
   *)
   val get_subterm_fwd : t -> Path.forward -> t
 end
@@ -202,7 +202,7 @@ module type Term = sig
 
   (** [get_subterm t pth] is the subterm of [t] at position defined by the path [pth].
 
-      @raise Get_subterm_oob if the path is out of bounds. *)
+      Raise [Get_subterm_oob] if the path is out of bounds. *)
   val get_subterm : t -> Path.t -> t
 
   (** [subst ~term ~path f] replaces the subterm of [term] at position [path]
@@ -256,13 +256,13 @@ module type Subst = sig
   val eval : var -> t -> term option
 
   (** Exception-raising variant of {!eval}.
-      @raise Not_found if [v] is not in the domain of [subst]. *)
+      Raises [Not_found] if [v] is not in the domain of [subst]. *)
   val eval_exn : var -> t -> term
 
   (** [add v t subst] adds a mapping from [v] to [t] in [subst].
       If [v] is already in the domain of [subst], the previous mapping is replaced.
 
-      @raise Invalid_argument if [t] is a variable equal to [v] *)
+      Raises [Invalid_argument] if [t] is a variable equal to [v] *)
   val add : var -> term -> t -> t
 
   (** [unsafe_add] does as {!add} but doen't check for validity of the mapping. *)
@@ -275,7 +275,7 @@ module type Subst = sig
 
   (** [union s1 s2] computes the union of [s1] and [s2].
 
-      @raise Invalid_argument if [s1] and [s2] have overlapping domains. *)
+      Raises [Invalid_argument] if [s1] and [s2] have overlapping domains. *)
   val union : t -> t -> t
 
   (** [Unification] contains facilities to perform first-order term unification *)
@@ -296,7 +296,7 @@ module type Subst = sig
     (** [unify_exn t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
         an updated {!state}.
 
-        @raise Cannot_unify if no solution was found. *)
+        Raises [Cannot_unify] if no solution was found. *)
     val unify_exn : term -> term -> state -> state
 
     (** [unify_subst s state] unifies [s] with substitution state [state]
@@ -343,7 +343,7 @@ module type Term_index = sig
 
   (** [to_term term] creates a new term representing the internal term [term].
 
-      @raise Invalid_argument if [term] contains a cycle. *)
+      Raises [Invalid_argument] if [term] contains a cycle. *)
   val to_term : internal_term -> term
 
   (** [get_subst term] extracts a substitution out of [term] *)
