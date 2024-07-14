@@ -13,4 +13,4 @@ store a set of first-order terms and perform the following queries:
 ## Term rewriting
 
 The library implements basic facilities to enumerate matches for given patterns
-and perform substitutions.
+and perform substitutions. It also exposes facilities to solve unification problems.

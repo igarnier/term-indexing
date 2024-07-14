@@ -12,7 +12,7 @@
 (package
  (name term-indexing)
  (synopsis "Term indexing library")
- (description "A library for term indexing. It allows to represent set of first-order terms and to perform queries such as iterating on terms unifiable with, specializing or generalizing a given query term.")
+ (description "A library for term indexing. It allows to represent set of first-order terms and to perform queries such as iterating on terms unifiable with, specializing or generalizing a given query term. The library also exposes facilities for term rewriting and solving unification problems.")
  (license MIT)
  (tags (symbolics rewriting))
  (depends
