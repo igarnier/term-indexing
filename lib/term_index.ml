@@ -151,6 +151,15 @@ end = struct
       in
       loop fprim fvar IS.empty term
 
+    let destruct fprim fvar (term : t) =
+      match !term with
+      | Prim (prim, subterms) -> fprim prim subterms
+      | Var (v, repr) -> (
+          match !repr with
+          | IVar | EVar -> fvar v None
+          | Prim _ | Var _ -> fvar v (Some repr))
+      | IVar | EVar -> assert false
+
     (* Precondition: input is a [Var]
        Postcondition: returns the representative term and the variable *)
     let rec get_repr (var : t) =
@@ -231,6 +240,8 @@ end = struct
   let get_subst = Internal_term.get_subst
 
   let reduce = Internal_term.reduce
+
+  let destruct = Internal_term.destruct
 
   let pp_internal_term = Internal_term.pp
 

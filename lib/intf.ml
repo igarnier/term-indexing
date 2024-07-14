@@ -166,7 +166,7 @@ module type Term_core = sig
   val var : var -> t
 
   (** [destruct t ifprim ifvar] performs case analysis on the term [t] *)
-  val destruct : t -> (prim -> t array -> 'a) -> (var -> 'a) -> 'a
+  val destruct : (prim -> t array -> 'a) -> (var -> 'a) -> t -> 'a
 
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
@@ -355,6 +355,13 @@ module type Term_index = sig
       passed to [fvar] as [Some term]. *)
   val reduce :
     (prim -> 'a array -> 'a) ->
+    (var -> internal_term option -> 'a) ->
+    internal_term ->
+    'a
+
+  (** [destruct ifprim ifvar t] performs case analysis on the term [t] *)
+  val destruct :
+    (prim -> internal_term array -> 'a) ->
     (var -> internal_term option -> 'a) ->
     internal_term ->
     'a
