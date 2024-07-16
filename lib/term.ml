@@ -155,6 +155,16 @@ module Make_hash_consed
     match term.Hashcons.node with
     | Prim (p, subterms, _) -> fprim p subterms
     | Var v -> fvar v
+  [@@ocaml.inline]
+
+  let destruct2 fpp fpv fvp fvv term1 term2 =
+    match (term1.Hashcons.node, term2.Hashcons.node) with
+    | (Prim (p1, subterms1, _), Prim (p2, subterms2, _)) ->
+        fpp p1 subterms1 p2 subterms2
+    | (Prim (p, subterms, _), Var v) -> fpv p subterms v
+    | (Var v, Prim (p, subterms, _)) -> fvp v p subterms
+    | (Var v1, Var v2) -> fvv v1 v2
+  [@@ocaml.inline]
 
   (* re-export generic fold *)
   let fold = fold

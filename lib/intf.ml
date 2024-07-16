@@ -165,8 +165,18 @@ module type Term_core = sig
   (** [var v] construcst a variable [v] *)
   val var : var -> t
 
-  (** [destruct t ifprim ifvar] performs case analysis on the term [t] *)
+  (** [destruct ifprim ifvar t] performs case analysis on the term [t] *)
   val destruct : (prim -> t array -> 'a) -> (var -> 'a) -> t -> 'a
+
+  (** [destruct2 fpp fpv fvp fvv t1 t2] performs case analysis on a pair of terms [t1], [t2] *)
+  val destruct2 :
+    (prim -> t array -> prim -> t array -> 'a) ->
+    (prim -> t array -> int -> 'a) ->
+    (int -> prim -> t array -> 'a) ->
+    (int -> int -> 'a) ->
+    t ->
+    t ->
+    'a
 
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
