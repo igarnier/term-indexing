@@ -442,3 +442,33 @@ module type Term_index = sig
   val iter_generalize_transient :
     (internal_term -> 'a -> unit) -> 'a t -> term -> unit
 end
+
+(** The module type of zippers. *)
+module type Zipper = sig
+  (** The type of terms. *)
+  type term
+
+  (** The type of zippers. *)
+  type t
+
+  (** [cursor z] is the term under focus of [z]. *)
+  val cursor : t -> term
+
+  (** [path z] is the path of the term under focus of [z]. *)
+  val path : t -> Path.t
+
+  (** [of_term t] is the zipper of the term [t]. *)
+  val of_term : term -> t
+
+  (** [to_term z] is the term represented by the zipper [z]. *)
+  val to_term : t -> term
+
+  (** [move_up z] is the zipper obtained by moving up in the zipper [z]. *)
+  val move_up : t -> t option
+
+  (** [move_at z i] is the zipper obtained by moving at the index [i]. *)
+  val move_at : t -> int -> t option
+
+  (** [replace t z] is the zipper obtained by replacing the term at the focus of [z] by [t]. *)
+  val replace : term -> t -> t
+end
