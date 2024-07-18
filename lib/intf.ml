@@ -108,6 +108,9 @@ module type Pattern = sig
       matching the list pattern [plist]. *)
   val prim_pred : (prim -> bool) -> plist -> t
 
+  (** [any_var] is a pattern matching any variable. *)
+  val any_var : t
+
   (** [var i] is a pattern matching a variable [i]. *)
   val var : int -> t
 

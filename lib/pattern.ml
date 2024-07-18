@@ -22,7 +22,7 @@ type ('f1, 'f2, 'f) join =
 
 type (_, _) pattern_desc =
   | Patt_prim : 'p prim_pred * ('p, 'f) pattern_list -> ('p, 'f) pattern_desc
-  | Patt_var : int -> ('p, unfocused) pattern_desc
+  | Patt_var : int option -> ('p, unfocused) pattern_desc
   | Patt_any : ('p, unfocused) pattern_desc
   | Patt_focus : ('p, unfocused) pattern -> ('p, focused) pattern_desc
 
@@ -109,7 +109,8 @@ struct
     match (patt.patt_desc, node.Hashcons.node) with
     | (Patt_focus patt, _) -> pattern_matches_aux patt node
     | (Patt_any, _) -> true
-    | (Patt_var i, Var j) -> i = j
+    | (Patt_var None, Var _j) -> true
+    | (Patt_var (Some i), Var j) -> i = j
     | (Patt_var _, _) -> false
     | (Patt_prim _, Var _) -> false
     | (Patt_prim (hpred, subpatts), Prim (prim, subterms, _)) -> (
@@ -218,7 +219,9 @@ struct
     match patts with
     | Ex_patt_list patts -> ex_patt (Patt_prim (Patt_pred prim_pred, patts))
 
-  let var id = ex_patt (Patt_var id)
+  let any_var = ex_patt (Patt_var None)
+
+  let var id = ex_patt (Patt_var (Some id))
 
   let any = ex_patt Patt_any
 
@@ -253,7 +256,8 @@ struct
         Format.fprintf fmtr "[%a](%a)" P.pp prim pp_patt_list subpatts
     | Patt_prim (Patt_pred _, subpatts) ->
         Format.fprintf fmtr "[opaque_pred](%a)" pp_patt_list subpatts
-    | Patt_var id -> Format.fprintf fmtr "[var %d]" id
+    | Patt_var None -> Format.fprintf fmtr "[var any]"
+    | Patt_var (Some id) -> Format.fprintf fmtr "[var %d]" id
     | Patt_any -> Format.pp_print_string fmtr "_"
     | Patt_focus patt -> Format.fprintf fmtr "[> %a <]" pp_patt patt
 
