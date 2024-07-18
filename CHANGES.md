@@ -2,6 +2,7 @@
 - add `Term.destruct2`
 - add `Pattern.var_any`
 - comment fixes
+- add `Zipper` module
 
 ## 0.0.1
 - First release of `term-indexing`, a library to index and rewrite sets of first-order terms.
