@@ -167,6 +167,18 @@ module Unification = struct
         let lhs = mul (var 0) (sub (var 5) (var 0)) in
         fail_unify lhs rhs)
 
+  let unfold_case =
+    Alcotest.test_case "unfold" `Quick (fun () ->
+        let state = U.empty () in
+        let state = U.unify_exn (var 0) (var 1) state in
+        let state = U.unify_exn (var 1) (var 2) state in
+        let term = float 1.0 in
+        let state = U.unify_exn (var 2) term state in
+        let term' = U.unfold state term in
+        if not (alpha_eq term' (float 1.0)) then
+          Alcotest.failf "Unexpected: %a <> %a" Expr.pp term Expr.pp term'
+        else ())
+
   let generalize_diag =
     QCheck2.Test.make
       ~name:"generalize-diag"
@@ -223,5 +235,6 @@ let () =
             unification_case_2;
             unification_case_3;
             unification_regressions;
+            unfold_case;
             generalize_diag;
             generalize_cases ] ) ]

@@ -326,6 +326,13 @@ module type Subst = sig
 
     (** [subst state] returns the substitution underlying the unification state. *)
     val subst : state -> t
+
+    (** [Occurs_check] is raised by {!unfold} when the solution contains a cycle. *)
+    exception Occurs_check
+
+    (** [unfold state term] returns [term] with variables substituted for their representative terms.
+        Raises [Occurs_check] if the solution contains a cycle. *)
+    val unfold : state -> term -> term
   end
 end
 

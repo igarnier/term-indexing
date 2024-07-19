@@ -162,5 +162,26 @@ module Make
 
     let unify_subst (subst : t) (state : state) =
       try Some (unify_subst_exn subst state) with Cannot_unify -> None
+
+    exception Occurs_check
+
+    let unfold state term =
+      let rec loop visited (state : state) (term : term) =
+        match term.Hashcons.node with
+        | Prim (prim, subterms, ub) ->
+            (* Optimization: if the term is ground then no need to recurse. *)
+            if Int_option.is_none ub then term
+            else T.prim prim (Array.map (loop visited state) subterms)
+        | Var v -> (
+            let repr = Uf.Map_based.find state.uf v in
+            match eval repr state.subst with
+            | None -> term
+            | Some term ->
+                if Int_set.mem repr visited then raise Occurs_check
+                else
+                  let visited = Int_set.add repr visited in
+                  loop visited state term)
+      in
+      loop Int_set.empty state term
   end
 end
