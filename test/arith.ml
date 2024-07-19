@@ -34,8 +34,8 @@ module Var_map : Intf.Map with type key = int = struct
       m2
 end
 
-module Expr = Term.Make_hash_consed (Prim) (Var_map)
-module Subst_mod = Subst.Make (Prim) (Var_map) (Expr)
+module Pack = Make_internal (Prim)
+include Pack
 
 (* ---------------------------------------- *)
 
@@ -43,7 +43,7 @@ module Subst_mod = Subst.Make (Prim) (Var_map) (Expr)
 module type Index_signature = sig
   type 'a t
 
-  type term = Expr.t
+  type term = Term.t
 
   val create : unit -> 'a t
 
@@ -64,23 +64,21 @@ module type Index_signature = sig
   end
 end
 
-module Index = Term_index.Make (Prim) (Expr) (Subst_mod)
-module Reference = Naive_index.Make (Prim) (Expr) (Subst_mod)
-module Subst = Subst_mod
+module Reference = Naive_index.Make (Prim) (Term) (Subst)
 
-let add x y = Expr.prim Add [| x; y |]
+let add x y = Term.prim Add [| x; y |]
 
-let sub x y = Expr.prim Sub [| x; y |]
+let sub x y = Term.prim Sub [| x; y |]
 
-let mul x y = Expr.prim Mul [| x; y |]
+let mul x y = Term.prim Mul [| x; y |]
 
-let div x y = Expr.prim Div [| x; y |]
+let div x y = Term.prim Div [| x; y |]
 
-let neg x = Expr.prim Neg [| x |]
+let neg x = Term.prim Neg [| x |]
 
-let float f = Expr.prim (Prim.Float f) [||]
+let float f = Term.prim (Prim.Float f) [||]
 
-let var s = Expr.var s
+let var s = Term.var s
 
 let mkgen () =
   let c = ref 0 in
@@ -89,21 +87,21 @@ let mkgen () =
     c := !c + 1 ;
     v
 
-let canon t = Expr.canon t (mkgen ()) |> snd
+let canon t = Term.canon t (mkgen ()) |> snd
 
 let alpha_eq t1 t2 =
   let t1 = canon t1 in
   let t2 = canon t2 in
-  Expr.equal t1 t2
+  Term.equal t1 t2
 
 let alpha_eq_list l1 l2 =
-  let l1 = List.map canon l1 |> List.sort Expr.compare in
-  let l2 = List.map canon l2 |> List.sort Expr.compare in
-  List.equal Expr.equal l1 l2
+  let l1 = List.map canon l1 |> List.sort Term.compare in
+  let l2 = List.map canon l2 |> List.sort Term.compare in
+  List.equal Term.equal l1 l2
 
 let alpha_eq_list_diff l1 l2 =
-  let l1 = List.map canon l1 |> List.sort Expr.compare in
-  let l2 = List.map canon l2 |> List.sort Expr.compare in
+  let l1 = List.map canon l1 |> List.sort Term.compare in
+  let l2 = List.map canon l2 |> List.sort Term.compare in
   let in_l1_not_l2 =
     List.filter (fun x1 -> not (List.exists (fun x2 -> alpha_eq x1 x2) l2)) l1
   in
@@ -137,17 +135,20 @@ let rec pp_native fmtr (term : native) =
 
 (* -------------------- *)
 
-let rec to_native : Expr.t -> native =
- fun { Hashcons.node = desc; _ } ->
-  match desc with
-  | Prim (Prim.Add, [| lhs; rhs |], _) -> Add (to_native lhs, to_native rhs)
-  | Prim (Prim.Sub, [| lhs; rhs |], _) -> Sub (to_native lhs, to_native rhs)
-  | Prim (Prim.Mul, [| lhs; rhs |], _) -> Mul (to_native lhs, to_native rhs)
-  | Prim (Prim.Div, [| lhs; rhs |], _) -> Div (to_native lhs, to_native rhs)
-  | Prim (Prim.Neg, [| e |], _) -> Neg (to_native e)
-  | Prim (Float f, [||], _) -> Const f
-  | Var v -> Var v
-  | _ -> assert false
+let rec to_native : Term.t -> native =
+ fun term ->
+  Term.destruct
+    (fun prim subterms ->
+      match (prim, subterms) with
+      | (Prim.Add, [| lhs; rhs |]) -> Add (to_native lhs, to_native rhs)
+      | (Prim.Sub, [| lhs; rhs |]) -> Sub (to_native lhs, to_native rhs)
+      | (Prim.Mul, [| lhs; rhs |]) -> Mul (to_native lhs, to_native rhs)
+      | (Prim.Div, [| lhs; rhs |]) -> Div (to_native lhs, to_native rhs)
+      | (Prim.Neg, [| e |]) -> Neg (to_native e)
+      | (Prim.Float f, [||]) -> Const f
+      | _ -> assert false)
+    (fun v -> Var v)
+    term
 
 (* ---------------------------------------- *)
 
@@ -171,7 +172,7 @@ let symbol =
    - indicator variables are disjoint from non-indicator variables, the latter
      are not deterministic
 *)
-let term_gen canonical_var : Expr.t Gen.t =
+let term_gen canonical_var : Term.t Gen.t =
   let float_ =
     Gen.small_int |> Gen.map (fun i -> float (float_of_int i +. 0.5))
   in

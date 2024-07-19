@@ -26,7 +26,7 @@ module Stub () = struct
 
   let () = Format.printf "three@.%a@." (I.pp Fmt.int) index
 
-  let () = I.iter (fun k v -> Format.printf "%a -> %d@." Expr.pp k v) index
+  let () = I.iter (fun k v -> Format.printf "%a -> %d@." Term.pp k v) index
 
   (* iter-unifiable *)
 
@@ -34,7 +34,7 @@ module Stub () = struct
 
   (* let () = *)
   (*   I.iter_unifiable *)
-  (*     (fun k v -> Format.printf "%a -> %d@." Expr.pp k v) *)
+  (*     (fun k v -> Format.printf "%a -> %d@." Term.pp k v) *)
   (*     index *)
   (*     (I.of_term index (add (var 0) (var 1))) *)
 
@@ -60,7 +60,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." Term.pp k v)
       index
       (add (var 0) (var 1))
 
@@ -70,7 +70,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." Term.pp k v)
       index
       (add (var 0) (var 0))
 
@@ -78,7 +78,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." Term.pp k v)
       index
       (add (var 0) (var 1))
 
@@ -87,7 +87,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." Term.pp k v)
       index
       (add (var 0) (var 0))
 
@@ -95,7 +95,7 @@ module Stub () = struct
 
   let () =
     I.iter_specialize
-      (fun k v -> Format.printf "%a -> %d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %d@." Term.pp k v)
       index
       (var 0)
 
@@ -112,7 +112,7 @@ module Stub () = struct
 
   let () =
     I.iter_generalize
-      (fun k v -> Format.printf "%a -> value=%d@." Expr.pp k v)
+      (fun k v -> Format.printf "%a -> value=%d@." Term.pp k v)
       index
       (add (var 2) (var 1))
 
@@ -125,9 +125,9 @@ module Stub () = struct
       add subtree subtree
 
   let make_generalizations term =
-    Expr.fold
+    Term.fold
       (fun _subterm path acc ->
-        (path, Expr.subst ~term ~path (Fun.const @@ var 0)) :: acc)
+        (path, Term.subst ~term ~path (Fun.const @@ var 0)) :: acc)
       []
       term
 
@@ -147,7 +147,7 @@ module Stub () = struct
 
   let () =
     I.iter_generalize
-      (fun k v -> Format.printf "%a -> %a -> value=%d@." Expr.pp k Expr.pp k v)
+      (fun k v -> Format.printf "%a -> %a -> value=%d@." Term.pp k Term.pp k v)
       index
       (add (var 1) (var 1))
 
@@ -233,7 +233,7 @@ module Stub () = struct
 
   let () =
     I.iter_unifiable
-      (fun term v -> Format.printf "found %a -> %d@." Expr.pp term v)
+      (fun term v -> Format.printf "found %a -> %d@." Term.pp term v)
       index
       (to_term (float 1.0))
 end

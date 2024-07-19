@@ -1,35 +1,41 @@
-open Term_indexing
 open Arith
 
 (* -------------------- *)
 
-module Patt = Pattern.Make_with_hash_consing (Prim) (Expr)
+let add x y = Term.prim Add [| x; y |]
 
-let add x y = Expr.prim Add [| x; y |]
+let sub x y = Term.prim Sub [| x; y |]
 
-let sub x y = Expr.prim Sub [| x; y |]
+let mul x y = Term.prim Mul [| x; y |]
 
-let mul x y = Expr.prim Mul [| x; y |]
+let div x y = Term.prim Div [| x; y |]
 
-let div x y = Expr.prim Div [| x; y |]
+let float f = Term.prim (Prim.Float f) [||]
 
-let float f = Expr.prim (Prim.Float f) [||]
-
-let var s = Expr.var s
+let var s = Term.var s
 
 (* -------------------- *)
 
 let rewrite_at term path =
-  let target = Expr.get_subterm term path in
-  Format.printf "%a@." Expr.pp target ;
-  match target.Hashcons.node with
-  | Prim
-      ( Prim.Mul,
-        [| something; { node = Prim (Prim.Add, [| lhs; rhs |], _); _ } |],
-        _ ) ->
-      let replacement = add (mul something lhs) (mul something rhs) in
-      Expr.subst ~term ~path (Fun.const replacement)
-  | _ -> assert false
+  let target = Term.get_subterm term path in
+  Term.destruct
+    (fun prim subterms ->
+      match (prim, subterms) with
+      | (Prim.Mul, [| something; add_term |]) ->
+          Term.destruct
+            (fun prim subterms ->
+              match (prim, subterms) with
+              | (Prim.Add, [| lhs; rhs |]) ->
+                  let replacement =
+                    add (mul something lhs) (mul something rhs)
+                  in
+                  Term.subst ~term ~path (Fun.const replacement)
+              | _ -> assert false)
+            (fun _ -> assert false)
+            add_term
+      | _ -> assert false)
+    (fun _ -> assert false)
+    target
 
 (* -------------------- *)
 
@@ -40,17 +46,17 @@ let expression =
 let basic_rewrite =
   Alcotest.test_case "basic_rewrite" `Quick (fun () ->
       let add_pattern =
-        let open Patt in
+        let open Pattern in
         prim Prim.Add list_any
       in
       let pattern =
-        let open Patt in
+        let open Pattern in
         prim Prim.Mul (any @. add_pattern @. list_empty)
       in
       (* Matches are produced in a depth-first fashion, hence matches
          closer to the root are closer to the beginning of the list of
          matches. *)
-      let matches = Patt.all_matches [pattern] expression in
+      let matches = Pattern.all_matches [pattern] expression in
       let expected =
         Path.
           [ at_index 0 (at_index 1 (at_index 1 root));
@@ -62,7 +68,7 @@ let basic_rewrite =
         else
           Alcotest.failf
             "all_matches %a: expected %a, got %a@."
-            Patt.pp
+            Pattern.pp
             pattern
             (Fmt.Dump.list Path.pp)
             expected
@@ -78,17 +84,17 @@ let basic_rewrite =
         sub subexpr (div subexpr (div subexpr (var 2)))
       in
       (* Thanks to hash-consing, structural equality is physical equality *)
-      if target.tag = rewritten.tag then ()
+      if Term.equal target rewritten then ()
       else
         Alcotest.failf
           "rewrite_at %a %a: expected %a, got %a@."
           (Fmt.Dump.list Path.pp)
           matches
-          Expr.pp
+          Term.pp
           expression
-          Expr.pp
+          Term.pp
           target
-          Expr.pp
+          Term.pp
           rewritten)
 
 (* -------------------- *)
@@ -96,18 +102,18 @@ let basic_rewrite =
 let focused_rewrite =
   Alcotest.test_case "focused_rewrite" `Quick (fun () ->
       let mul_pattern =
-        let open Patt in
+        let open Pattern in
         prim Prim.Mul list_any
       in
       let pattern =
-        let open Patt in
+        let open Pattern in
         prim Prim.Div (focus mul_pattern @. any @. list_empty)
       in
       (* Matches are produced in a depth-first fashion, hence matches
          closer to the root are closer to the beginning of the list of
          matches. *)
-      let first_matches = Patt.first_match [pattern] expression in
-      let matches = Patt.all_matches [pattern] expression in
+      let first_matches = Pattern.first_match [pattern] expression in
+      let matches = Pattern.all_matches [pattern] expression in
       let () =
         let expected =
           Path.
@@ -118,7 +124,7 @@ let focused_rewrite =
         else
           Alcotest.failf
             "all_matches %a: expected %a, got %a@."
-            Patt.pp
+            Pattern.pp
             pattern
             (Fmt.Dump.list Path.pp)
             expected
@@ -132,7 +138,7 @@ let focused_rewrite =
         else
           Alcotest.failf
             "first_matches %a: expected %a, got %a@."
-            Patt.pp
+            Pattern.pp
             pattern
             (Fmt.Dump.list Path.pp)
             expected
@@ -150,17 +156,17 @@ let focused_rewrite =
           (div subexpr (div subexpr (var 2)))
       in
       (* Thanks to hash-consing, structural equality is physical equality *)
-      if target.tag = rewritten.tag then ()
+      if Term.equal target rewritten then ()
       else
         Alcotest.failf
           "rewrite_at %a %a: expected@.%a@.got@.%a@."
           (Fmt.Dump.list Path.pp)
           matches
-          Expr.pp
+          Term.pp
           expression
-          Expr.pp
+          Term.pp
           target
-          Expr.pp
+          Term.pp
           rewritten)
 
 let () =

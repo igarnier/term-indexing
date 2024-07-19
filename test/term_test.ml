@@ -1,10 +1,9 @@
-open Term_indexing
 open Arith
 
 let fold_lexicographic =
   QCheck2.Test.make
     ~name:"fold_lexicographic"
-    ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
+    ~print:(fun term -> Format.asprintf "%a" Term.pp term)
     ~count:100
     Arith.gen
     (fun term ->
@@ -19,9 +18,9 @@ let fold_lexicographic =
 
 let fold_variables =
   Alcotest.test_case "fold_variables" `Quick (fun () ->
-      let term = Expr.(add (var 0) (var 1)) in
+      let term = Term.(add (var 0) (var 1)) in
       let vars =
-        Expr.fold_variables
+        Term.fold_variables
           (fun var path acc -> (Path.reverse path, var) :: acc)
           []
           term
@@ -47,17 +46,17 @@ let ints () =
 let canon_variable_count =
   QCheck2.Test.make
     ~name:"canon_variable_count"
-    ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
+    ~print:(fun term -> Format.asprintf "%a" Term.pp term)
     ~count:100
     Arith.gen
     (fun term ->
       let vars =
-        Expr.fold_variables (fun var _path acc -> var :: acc) [] term
+        Term.fold_variables (fun var _path acc -> var :: acc) [] term
         |> List.sort_uniq Int.compare |> List.length
       in
-      let (_, canon) = Expr.canon term (ints ()) in
+      let (_, canon) = Term.canon term (ints ()) in
       let canon_vars =
-        Expr.fold_variables (fun var _path acc -> var :: acc) [] canon
+        Term.fold_variables (fun var _path acc -> var :: acc) [] canon
         |> List.sort_uniq Int.compare |> List.length
       in
       Int.equal vars canon_vars)
@@ -65,14 +64,14 @@ let canon_variable_count =
 let canon_idempotent =
   QCheck2.Test.make
     ~name:"canon_idempotent"
-    ~print:(fun term -> Format.asprintf "%a" Expr.pp term)
+    ~print:(fun term -> Format.asprintf "%a" Term.pp term)
     ~count:100
     Arith.gen
     (fun term ->
-      let (_, canon) = Expr.canon term (ints ()) in
-      let (_, canon') = Expr.canon canon (ints ()) in
-      Format.printf "%a -> %a -> %a@." Expr.pp term Expr.pp canon Expr.pp canon' ;
-      Expr.equal canon canon')
+      let (_, canon) = Term.canon term (ints ()) in
+      let (_, canon') = Term.canon canon (ints ()) in
+      Format.printf "%a -> %a -> %a@." Term.pp term Term.pp canon Term.pp canon' ;
+      Term.equal canon canon')
 
 let () =
   Alcotest.run

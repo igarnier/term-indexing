@@ -3,6 +3,8 @@
 open Arith
 module Path = Term_indexing.Path
 
+module _ : Index_signature = Index
+
 module Make_shared_test
     (Index : Index_signature)
     (Name : sig
@@ -31,7 +33,7 @@ struct
         let _ = Index.insert (neg (var 543159235)) 3 index in
         Index.iter
           (fun term data ->
-            if Expr.equal term (neg (var 543159235)) then assert (data = 3)
+            if Term.equal term (neg (var 543159235)) then assert (data = 3)
             else ())
           index)
 
@@ -49,9 +51,9 @@ struct
       else
         Alcotest.failf
           "expected: %a@.got: %a @."
-          (Fmt.Dump.list Expr.pp)
+          (Fmt.Dump.list Term.pp)
           expected
-          (Fmt.Dump.list Expr.pp)
+          (Fmt.Dump.list Term.pp)
           got
 
     let index_basic =
@@ -96,9 +98,9 @@ struct
               else
                 Alcotest.failf
                   "expected: %a@.got: %a, %d@."
-                  Expr.pp
+                  Term.pp
                   t'
-                  Expr.pp
+                  Term.pp
                   t
                   v
           | _ -> Alcotest.fail "expected one unifiable term")
@@ -110,9 +112,9 @@ struct
         add subtree subtree
 
     let make_generalizations term =
-      Expr.fold
+      Term.fold
         (fun _subterm path acc ->
-          (path, Expr.subst ~term ~path (Fun.const @@ var 0)) :: acc)
+          (path, Term.subst ~term ~path (Fun.const @@ var 0)) :: acc)
         []
         term
 
@@ -136,7 +138,7 @@ struct
               | _ ->
                   Alcotest.failf
                     "Expected to find single variable, found %a instead"
-                    Expr.pp
+                    Term.pp
                     expr)
             index
             (add (var 1) (var 1)) ;
@@ -145,12 +147,12 @@ struct
              We expect to find only a single variable or the query itself. *)
           Index.iter_generalize
             (fun expr _ ->
-              if not (alpha_eq expr query || Expr.is_var expr |> Option.is_some)
+              if not (alpha_eq expr query || Term.is_var expr |> Option.is_some)
               then
                 Alcotest.failf
                   "Expected to find full tree or single variable, found %a \
                    instead"
-                  Expr.pp
+                  Term.pp
                   expr
               else ())
             index
@@ -169,10 +171,10 @@ struct
              solution found is the full tree. *)
           Index.iter_specialize
             (fun expr _ ->
-              if not (Expr.equal expr tree) then
+              if not (Term.equal expr tree) then
                 Alcotest.failf
                   "Expected to find full tree, found %a instead"
-                  Expr.pp
+                  Term.pp
                   expr
               else ())
             index
@@ -180,7 +182,7 @@ struct
           (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
              solution found in the full tree. *)
           let query =
-            Expr.subst
+            Term.subst
               ~term:tree
               ~path:
                 Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
@@ -188,10 +190,10 @@ struct
           in
           Index.iter_specialize
             (fun expr _ ->
-              if not (Expr.equal expr tree || alpha_eq expr query) then
+              if not (Term.equal expr tree || alpha_eq expr query) then
                 Alcotest.failf
                   "Expected to find full tree or query, found %a instead"
-                  Expr.pp
+                  Term.pp
                   expr
               else ())
             index
@@ -285,7 +287,7 @@ end
 module Test_against_reference (I : Index_signature) = struct
   open QCheck2
 
-  let term_gen canonical_var : Expr.t Gen.t =
+  let term_gen canonical_var : Term.t Gen.t =
     let float_ =
       Gen.small_int |> Gen.map (fun i -> float (float_of_int i +. 0.5))
     in
@@ -359,11 +361,11 @@ module Test_against_reference (I : Index_signature) = struct
             index
             (Reference.pp Fmt.int)
             baseline_index
-            Expr.pp
+            Term.pp
             query
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Term.pp)
             expected
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Term.pp)
             got
         else true)
     |> QCheck_alcotest.to_alcotest
@@ -407,11 +409,11 @@ module Test_against_reference (I : Index_signature) = struct
             index
             (Reference.pp Fmt.int)
             baseline_index
-            Expr.pp_sexp
+            Term.pp_sexp
             query
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
         else true)
     |> QCheck_alcotest.to_alcotest
@@ -455,11 +457,11 @@ module Test_against_reference (I : Index_signature) = struct
             index
             (Reference.pp Fmt.int)
             baseline_index
-            Expr.pp
+            Term.pp
             query
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Term.pp)
             expected
-            (Fmt.Dump.list Expr.pp)
+            (Fmt.Dump.list Term.pp)
             got
         else true)
     |> QCheck_alcotest.to_alcotest
@@ -483,14 +485,14 @@ module Regression_checks = struct
         Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
         let expected = mul (float 0.5) (float 0.5) in
         match !acc with
-        | [t] when Expr.equal t expected -> ()
+        | [t] when Term.equal t expected -> ()
         | got ->
             Format.printf "%a@." (Index.pp Fmt.int) index ;
             Alcotest.failf
               "got: %a, expected: %a"
-              (Fmt.Dump.list Expr.pp)
+              (Fmt.Dump.list Term.pp)
               got
-              Expr.pp
+              Term.pp
               expected)
 
   let regr2 =
@@ -512,14 +514,14 @@ module Regression_checks = struct
         Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
         let expected = div h h in
         match !acc with
-        | [t] when Expr.equal t expected -> ()
+        | [t] when Term.equal t expected -> ()
         | got ->
             Format.printf "%a@." (Index.pp Fmt.int) index ;
             Alcotest.failf
               "got: %a, expected: %a"
-              (Fmt.Dump.list Expr.pp)
+              (Fmt.Dump.list Term.pp)
               got
-              Expr.pp
+              Term.pp
               expected)
 
   let regr3 =
@@ -544,9 +546,9 @@ module Regression_checks = struct
         else
           Alcotest.failf
             "got: %a, expected: %a"
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected)
 
   let regr4 =
@@ -838,16 +840,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff got expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr5 =
@@ -864,16 +866,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff got expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr6 =
@@ -890,16 +892,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff got expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr7 =
@@ -916,16 +918,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff got expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr8 =
@@ -947,16 +949,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list (Fmt.Dump.pair Expr.pp_sexp Subst.pp))
+            (Fmt.Dump.list (Fmt.Dump.pair Term.pp_sexp Subst.pp))
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff (List.map fst got) expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr9 =
@@ -978,16 +980,16 @@ module Regression_checks = struct
         else (
           Format.eprintf
             "got: %a@.expected: %a@."
-            (Fmt.Dump.list (Fmt.Dump.pair Expr.pp_sexp Subst.pp))
+            (Fmt.Dump.list (Fmt.Dump.pair Term.pp_sexp Subst.pp))
             got
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             expected ;
           let (left, right) = alpha_eq_list_diff (List.map fst got) expected in
           Alcotest.failf
             "shouldn't have: %a@.should have: %a@."
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             left
-            (Fmt.Dump.list Expr.pp_sexp)
+            (Fmt.Dump.list Term.pp_sexp)
             right))
 
   let regr10 =
@@ -1000,14 +1002,14 @@ module Regression_checks = struct
         Index.iter_specialize (fun term _ -> acc := term :: !acc) index query ;
         let expected = mul (neg (var 1)) (neg (var 1)) in
         match !acc with
-        | [t] when Expr.equal t expected -> ()
+        | [t] when Term.equal t expected -> ()
         | got ->
             Format.printf "@.%a@." (Index.pp Fmt.int) index ;
             Alcotest.failf
               "got: %a, expected: %a"
-              (Fmt.Dump.list Expr.pp)
+              (Fmt.Dump.list Term.pp)
               got
-              Expr.pp
+              Term.pp
               expected)
 end
 

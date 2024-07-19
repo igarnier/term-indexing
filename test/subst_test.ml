@@ -53,9 +53,9 @@ module Unification = struct
     with U.Cannot_unify ->
       QCheck.Test.fail_reportf
         "could not unify:@.t0: %a@.t1: %a@."
-        Expr.pp
+        Term.pp
         t0
-        Expr.pp
+        Term.pp
         t1
 
   let fail_unify t0 t1 =
@@ -64,9 +64,9 @@ module Unification = struct
       ignore (U.unify_exn t0 t1 state) ;
       QCheck.Test.fail_reportf
         "didn't expect to unify:@.t0: %a@.t1: %a@."
-        Expr.pp
+        Term.pp
         t0
-        Expr.pp
+        Term.pp
         t1
     with U.Cannot_unify -> ()
 
@@ -89,14 +89,14 @@ module Unification = struct
     try
       let state = U.unify_exn t0 t1 state in
       if not (alpha_eq (Subst.lift (U.subst state) t0) expected) then
-        QCheck.Test.fail_reportf "expected: %a, got %a@." Expr.pp t0 Expr.pp t1
+        QCheck.Test.fail_reportf "expected: %a, got %a@." Term.pp t0 Term.pp t1
       else ()
     with U.Cannot_unify ->
       QCheck.Test.fail_reportf
         "could not unify:@.t0: %a@.t1: %a@."
-        Expr.pp
+        Term.pp
         t0
-        Expr.pp
+        Term.pp
         t1
 
   let unification_diag =
@@ -120,9 +120,9 @@ module Unification = struct
         if not ((clr && crl) || ((not clr) && not crl)) then
           QCheck.Test.fail_reportf
             "check not symmetric: %a, %a"
-            Expr.pp
+            Term.pp
             lhs
-            Expr.pp
+            Term.pp
             rhs
         else true)
     |> QCheck_alcotest.to_alcotest
@@ -176,7 +176,7 @@ module Unification = struct
         let state = U.unify_exn (var 2) term state in
         let term' = U.unfold state term in
         if not (alpha_eq term' (float 1.0)) then
-          Alcotest.failf "Unexpected: %a <> %a" Expr.pp term Expr.pp term'
+          Alcotest.failf "Unexpected: %a <> %a" Term.pp term Term.pp term'
         else ())
 
   let generalize_diag =
@@ -192,12 +192,12 @@ module Unification = struct
   let generalize t1 t2 =
     if U.generalize t1 t2 then ()
     else
-      QCheck.Test.fail_reportf "expected success: %a, %a" Expr.pp t1 Expr.pp t2
+      QCheck.Test.fail_reportf "expected success: %a, %a" Term.pp t1 Term.pp t2
 
   let generalize_fail t1 t2 =
     if not (U.generalize t1 t2) then ()
     else
-      QCheck.Test.fail_reportf "expected failure: %a, %a" Expr.pp t1 Expr.pp t2
+      QCheck.Test.fail_reportf "expected failure: %a, %a" Term.pp t1 Term.pp t2
 
   let check_generalize t1 t2 =
     generalize t1 t2 ;
