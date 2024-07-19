@@ -3,6 +3,7 @@
 - add `Pattern.var_any`
 - add `Zipper` module
 - add `Susbt.Unification.unfold`
+- use zippers in `Rewriting` module instead of `Path.t`
 - comment fixes
 
 ## 0.0.1

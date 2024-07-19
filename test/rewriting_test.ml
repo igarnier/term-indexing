@@ -56,7 +56,9 @@ let basic_rewrite =
       (* Matches are produced in a depth-first fashion, hence matches
          closer to the root are closer to the beginning of the list of
          matches. *)
-      let matches = Pattern.all_matches [pattern] expression in
+      let matches =
+        Pattern.all_matches [pattern] expression |> List.map Zipper.path
+      in
       let expected =
         Path.
           [ at_index 0 (at_index 1 (at_index 1 root));
@@ -112,8 +114,12 @@ let focused_rewrite =
       (* Matches are produced in a depth-first fashion, hence matches
          closer to the root are closer to the beginning of the list of
          matches. *)
-      let first_matches = Pattern.first_match [pattern] expression in
-      let matches = Pattern.all_matches [pattern] expression in
+      let first_matches =
+        Pattern.first_match [pattern] expression |> List.map Zipper.path
+      in
+      let matches =
+        Pattern.all_matches [pattern] expression |> List.map Zipper.path
+      in
       let () =
         let expected =
           Path.

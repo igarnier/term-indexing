@@ -7,6 +7,16 @@ module Int_option = Int_option
 module Term_index = Term_index
 module Zipper = Zipper
 
+module Make_internal (P : Intf.Signature) = struct
+  module Default_map = Term.Default_map
+  module Term = Term.Make_hash_consed (P) (Default_map)
+  module Path = Path
+  module Zipper = Zipper.Make (P) (Term)
+  module Pattern = Pattern.Make (P) (Term) (Zipper)
+  module Subst = Subst.Make (P) (Default_map) (Term)
+  module Index = Term_index.Make (P) (Term) (Subst)
+end
+
 (** [Make(P)] takes a {{!Term_indexing.Intf.Signature}[signature]} as input and returns
     a module packing the main features of the library. *)
 module Make (P : Intf.Signature) : sig
@@ -16,12 +26,15 @@ module Make (P : Intf.Signature) : sig
   (** Paths in first-order terms. *)
   module Path : module type of Path
 
+  (** Zipper. *)
+  module Zipper : Intf.Zipper with type term = Term.t
+
   (** Patterns over first-order terms and pattern matching. *)
   module Pattern :
     Intf.Pattern
       with type prim = P.t
-       and type path = Path.t
        and type term = Term.t
+       and type zipper = Zipper.t
 
   (** Substitutions. *)
   module Subst : Intf.Subst with type term = Term.t
@@ -32,15 +45,5 @@ module Make (P : Intf.Signature) : sig
       with type prim = P.t
        and type term = Term.t
        and type subst = Subst.t
-
-  (** Zipper. *)
-  module Zipper : Intf.Zipper with type term = Term.t
-end = struct
-  module Default_map = Term.Default_map
-  module Term = Term.Make_hash_consed (P) (Default_map)
-  module Path = Path
-  module Pattern = Pattern.Make (P) (Term)
-  module Subst = Subst.Make (P) (Default_map) (Term)
-  module Index = Term_index.Make (P) (Term) (Subst)
-  module Zipper = Zipper.Make (P) (Term)
-end
+end =
+  Make_internal (P)

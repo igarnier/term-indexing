@@ -63,11 +63,12 @@ and get_focus_list : type f. ('p, f) pattern_list -> f focus_tag =
 
 module Make_raw
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) =
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+    (Z : Intf.Zipper with type term = T.t) =
 struct
   type prim = P.t
 
-  type path = Path.t
+  type zipper = Z.t
 
   type t = Ex_patt : (prim, 'f) pattern -> t [@@ocaml.unboxed]
 
@@ -78,31 +79,43 @@ struct
 
   type term = T.t
 
-  let rec get_paths_of_focuses :
-      (prim, focused) pattern -> Path.t -> Path.t list -> Path.t list =
-   fun { patt_desc; _ } path acc ->
-    match patt_desc with
-    | Patt_prim (_, subterms) -> get_paths_of_focuses_list subterms path 0 acc
-    | Patt_focus _ -> path :: acc
+  let fold_range f acc bound =
+    let rec loop f acc bound i =
+      if Int.equal i bound then acc else loop f (f i acc) bound (i + 1)
+    in
+    loop f acc bound 0
+  [@@ocaml.inline]
 
-  and get_paths_of_focuses_list :
+  let arity zipper =
+    let term = Z.cursor zipper in
+    T.destruct (fun _ subterms -> Array.length subterms) (fun _ -> 0) term
+
+  let rec get_zippers_of_focuses :
+      (prim, focused) pattern -> zipper -> zipper list -> zipper list =
+   fun { patt_desc; _ } zipper acc ->
+    match patt_desc with
+    | Patt_prim (_, subterms) ->
+        get_zippers_of_focuses_list subterms zipper 0 acc
+    | Patt_focus _ -> zipper :: acc
+
+  and get_zippers_of_focuses_list :
       (prim, focused) pattern_list ->
-      Path.t ->
+      zipper ->
       int ->
-      Path.t list ->
-      Path.t list =
-   fun patt_list path index acc ->
+      zipper list ->
+      zipper list =
+   fun patt_list zipper index acc ->
     match patt_list with
     | Patt_list_cons (prim, tail, wit) -> (
         match wit with
         | FU ->
-            let prim_path = Path.at_index index path in
-            get_paths_of_focuses prim prim_path acc
-        | UF -> get_paths_of_focuses_list tail path (index + 1) acc
+            let prim_zipper = Z.move_at_exn zipper index in
+            get_zippers_of_focuses prim prim_zipper acc
+        | UF -> get_zippers_of_focuses_list tail zipper (index + 1) acc
         | FF ->
-            let prim_path = Path.at_index index path in
-            let acc = get_paths_of_focuses prim prim_path acc in
-            get_paths_of_focuses_list tail path (index + 1) acc)
+            let prim_zipper = Z.move_at_exn zipper index in
+            let acc = get_zippers_of_focuses prim prim_zipper acc in
+            get_zippers_of_focuses_list tail zipper (index + 1) acc)
 
   let rec pattern_matches_aux : type f. (prim, f) pattern -> term -> bool =
    fun patt node ->
@@ -136,71 +149,64 @@ struct
   let pattern_matches (patt : t) (node : term) =
     match patt with Ex_patt patt -> pattern_matches_aux patt node
 
-  exception Found of t * Path.t
+  exception Found of t * zipper
 
-  let first_match_aux matching term path =
-    let rec loop : matching -> term -> Path.t -> unit =
-     fun matching node path ->
-      let subterms =
-        match node.Hashcons.node with
-        | Prim (_, subterms, _) -> subterms
-        | Var _ -> [||]
-      in
-      Array.iteri
-        (fun index subterm ->
-          let path = Path.at_index index path in
-          loop matching subterm path)
-        subterms ;
+  let first_match_aux matching zipper =
+    let rec loop : matching -> zipper -> unit =
+     fun matching zipper ->
+      let arity = arity zipper in
+      for i = 0 to arity - 1 do
+        let zipper = Z.move_at_exn zipper i in
+        loop matching zipper
+      done ;
+      let node = Z.cursor zipper in
       match List.find_opt (fun patt -> pattern_matches patt node) matching with
       | None -> ()
-      | Some patt -> raise (Found (patt, path))
+      | Some patt -> raise (Found (patt, zipper))
     in
     try
-      loop matching term path ;
+      loop matching zipper ;
       None
-    with Found (patt, path) -> Some (patt, path)
+    with Found (patt, zipper) -> Some (patt, zipper)
 
   let rec all_matches_aux :
-      matching -> term -> Path.t -> (t * Path.t) list -> (t * Path.t) list =
-   fun matching node path acc ->
-    let subterms =
-      match node.Hashcons.node with
-      | Prim (_, subterms, _) -> subterms
-      | Var _ -> [||]
+      matching -> zipper -> (t * zipper) list -> (t * zipper) list =
+   fun matching zipper acc ->
+    let arity = arity zipper in
+    let acc =
+      fold_range
+        (fun index acc ->
+          let zipper = Z.move_at_exn zipper index in
+          all_matches_aux matching zipper acc)
+        acc
+        arity
     in
-    let (_, acc) =
-      Array.fold_left
-        (fun (index, acc) subterm ->
-          let path = Path.at_index index path in
-          (index + 1, all_matches_aux matching subterm path acc))
-        (0, acc)
-        subterms
-    in
+    let node = Z.cursor zipper in
     match List.find_opt (fun patt -> pattern_matches patt node) matching with
     | None -> acc
-    | Some patt -> (patt, path) :: acc
+    | Some patt -> (patt, zipper) :: acc
 
-  let refine_focused pattern path =
+  let refine_focused pattern zipper =
     match pattern with
     | Ex_patt patt -> (
         match get_focus patt with
         | Unfocused_tag -> []
-        | Focused_tag -> get_paths_of_focuses patt path [])
+        | Focused_tag -> get_zippers_of_focuses patt zipper [])
 
-  let all_matches matching node =
-    all_matches_aux matching node Path.root []
-    |> List.concat_map (fun ((Ex_patt patt as pattern), path) ->
+  let all_matches matching term =
+    all_matches_aux matching (Z.of_term term) []
+    |> List.concat_map (fun ((Ex_patt patt as pattern), zipper) ->
            match get_focus patt with
-           | Unfocused_tag -> [path]
-           | Focused_tag -> refine_focused pattern path)
+           | Unfocused_tag -> [zipper]
+           | Focused_tag -> refine_focused pattern zipper)
 
-  let first_match matching node =
-    match first_match_aux matching node Path.root with
+  let first_match matching term =
+    match first_match_aux matching (Z.of_term term) with
     | None -> []
-    | Some ((Ex_patt patt as pattern), path) -> (
+    | Some ((Ex_patt patt as pattern), zipper) -> (
         match get_focus patt with
-        | Unfocused_tag -> [path]
-        | Focused_tag -> refine_focused pattern path)
+        | Unfocused_tag -> [zipper]
+        | Focused_tag -> refine_focused pattern zipper)
 
   let uid_gen =
     let x = ref 0 in
@@ -279,62 +285,60 @@ end
 module Make : functor
   (P : Intf.Signature)
   (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+  (Z : Intf.Zipper with type term = T.t)
   ->
   Intf.Pattern
     with type prim = P.t
-     and type path = Path.t
-     and type term = P.t Term.term =
+     and type term = P.t Term.term
+     and type zipper = Z.t =
   Make_raw
 
 module Make_with_hash_consing
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) : sig
+    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+    (Z : Intf.Zipper with type term = T.t) : sig
   include
     Intf.Pattern
       with type prim = P.t
-       and type path = Path.t
        and type term = P.t Term.term
+       and type zipper = Z.t
 
-  val all_matches_with_hash_consing : t -> term -> path list
+  val all_matches_with_hash_consing : t -> term -> zipper list
 end = struct
-  include Make_raw (P) (T)
+  include Make_raw (P) (T) (Z)
 
   type key = { patt_uid : int; node_tag : int }
 
-  let table : (key, path list) Hashtbl.t = Hashtbl.create 7919
+  let table : (key, zipper list) Hashtbl.t = Hashtbl.create 7919
 
-  let rec all_matches_aux : t -> term -> Path.t -> Path.t list -> Path.t list =
-   fun patt node path acc ->
+  let rec all_matches_aux : t -> term -> zipper -> zipper list -> zipper list =
+   fun patt node zipper acc ->
     let patt_uid = uid patt in
     let node_tag = node.tag in
     match Hashtbl.find_opt table { patt_uid; node_tag } with
     | None ->
-        let subterms =
-          match node.Hashcons.node with
-          | Var _ -> [||]
-          | Prim (_, subterms, _) -> subterms
+        let acc =
+          fold_range
+            (fun index acc ->
+              let zipper = Z.move_at_exn zipper index in
+              let subterm = Z.cursor zipper in
+              all_matches_aux patt subterm zipper acc)
+            acc
+            (arity zipper)
         in
-        let (_, acc) =
-          Array.fold_left
-            (fun (index, acc) subterm ->
-              let path = Path.at_index index path in
-              (index + 1, all_matches_aux patt subterm path acc))
-            (0, acc)
-            subterms
-        in
-        if pattern_matches patt node then path :: acc else acc
+        if pattern_matches patt node then zipper :: acc else acc
     | Some res -> List.rev_append res acc
 
-  let all_matches_with_hash_consing pattern node =
+  let all_matches_with_hash_consing pattern term =
     match pattern with
     | Ex_patt patt -> (
         match get_focus patt with
-        | Unfocused_tag -> all_matches_aux pattern node Path.root []
+        | Unfocused_tag -> all_matches_aux pattern term (Z.of_term term) []
         | Focused_tag ->
-            let paths = all_matches_aux pattern node Path.root [] in
+            let zippers = all_matches_aux pattern term (Z.of_term term) [] in
             List.fold_left
-              (fun acc context_path ->
-                get_paths_of_focuses patt context_path acc)
+              (fun acc context_zipper ->
+                get_zippers_of_focuses patt context_zipper acc)
               []
-              paths)
+              zippers)
 end

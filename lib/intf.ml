@@ -68,8 +68,8 @@ module type Pattern = sig
   (** The type of primitives, i.e. the symbols. Each value of type [prim] has a definite arity. *)
   type prim
 
-  (** The type of paths in terms. *)
-  type path
+  (** The type of zippers over terms. *)
+  type zipper
 
   (** The type of patterns. *)
   type t
@@ -86,20 +86,20 @@ module type Pattern = sig
   (** [pattern_matches patt t] checks whether the pattern [patt] matches the term [t] *)
   val pattern_matches : t -> term -> bool
 
-  (** [all_matches t matching] returns all paths at which there is a subterm satisfying [matching] *)
-  val all_matches : matching -> term -> path list
+  (** [all_matches t matching] returns all zippers at which there is a subterm satisfying [matching] *)
+  val all_matches : matching -> term -> zipper list
 
-  (** [first_match t matching] returns the first paths, if any, where there is a subterm satisfying [matching].
+  (** [first_match t matching] returns the first zippers, if any, where there is a subterm satisfying [matching].
 
       If the matched pattern does not specify focused subterms, the result is at most a singleton list.
-      If the matched pattern specifies focused subterms, the result is a list of paths, one for each focused subterm.
+      If the matched pattern specifies focused subterms, the result is a list of zippers, one for each focused subterm.
  *)
-  val first_match : matching -> term -> path list
+  val first_match : matching -> term -> zipper list
 
-  (** [refine_focused patt paths] returns the refinements of [path] that correspond to focused subterms of [patt].
+  (** [refine_focused patt zippers] returns the refinements of [zippers] that correspond to focused subterms of [patt].
       If [patt] is does not specify focii, the result is the empty list.
  *)
-  val refine_focused : t -> path -> path list
+  val refine_focused : t -> zipper -> zipper list
 
   (** [prim p plist] is a pattern matching a term with head bearing a primitive [p] and subterms matching the list pattern [plist]. *)
   val prim : prim -> plist -> t
@@ -458,6 +458,15 @@ module type Zipper = sig
   (** The type of zippers. *)
   type t
 
+  (** [compare] is a total order. *)
+  val compare : t -> t -> int
+
+  (** [equal s1 s2] tests whether [s1] and [s2] are equal. *)
+  val equal : t -> t -> bool
+
+  (** [hash s] is a hash of [s]. *)
+  val hash : t -> int
+
   (** [cursor z] is the term under focus of [z]. *)
   val cursor : t -> term
 
@@ -475,6 +484,11 @@ module type Zipper = sig
 
   (** [move_at z i] is the zipper obtained by moving at the index [i]. *)
   val move_at : t -> int -> t option
+
+  (** [move_at_exn z i] is the exception-raising vaeriant of {!move_at}.
+
+      Raises [Invalid_argument] if [i] is out of bounds. *)
+  val move_at_exn : t -> int -> t
 
   (** [replace t z] is the zipper obtained by replacing the term at the focus of [z] by [t]. *)
   val replace : term -> t -> t

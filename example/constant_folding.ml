@@ -81,12 +81,11 @@ let rec rewrite_until_fixpoint term =
   let matches = Pattern.first_match [add_patt; mul_patt; neg_patt] term in
   match matches with
   | [] -> term
-  | path :: _ ->
+  | zipper :: _ ->
       let rewritten =
-        Term.subst ~term ~path (fun e ->
-            match reduce e with
-            | Some reduced -> reduced
-            | None -> failwith "can't happen")
+        match reduce (Zipper.cursor zipper) with
+        | Some reduced -> reduced
+        | None -> failwith "can't happen"
       in
       Format.printf "%a -> %a@." Term.pp term Term.pp rewritten ;
       rewrite_until_fixpoint rewritten
