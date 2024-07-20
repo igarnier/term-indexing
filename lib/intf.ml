@@ -184,15 +184,15 @@ module type Term_core = sig
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
 
-  (** [fold f acc term] folds [f] over the subterms of [t] *)
-  val fold : (t -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
-
-  (** [get_subterm_fwd t fpth] is the subterm of [t] at position defined by the forward path
+  (** [get_subterm t fpth] is the subterm of [t] at position defined by the forward path
       [fpth].
 
       Raises [Get_subterm_oob] if the path is out of bounds.
   *)
-  val get_subterm_fwd : t -> Path.forward -> t
+  val get_subterm : t -> int list -> t
+
+  (** [fold f acc t] folds [f] over the subterms of [t] *)
+  val fold : (t -> 'b -> 'b) -> 'b -> t -> 'b
 end
 
 (** The module type of first-order terms *)
@@ -216,14 +216,14 @@ module type Term = sig
   (** [get_subterm t pth] is the subterm of [t] at position defined by the path [pth].
 
       Raise [Get_subterm_oob] if the path is out of bounds. *)
-  val get_subterm : t -> Path.t -> t
+  val get_subterm : t -> int list -> t
 
-  (** [subst ~term ~path f] replaces the subterm of [term] at position [path]
+  (** [subst ~term ~path f] replaces the subterm of [term] at [path]
       by [f (get_subterm term path)]. *)
-  val subst : term:t -> path:Path.t -> (t -> t) -> t
+  val subst : term:t -> path:int list -> (t -> t) -> t
 
   (** [fold_variables f acc t] folds [f] over the variables of [t] *)
-  val fold_variables : (var -> Path.t -> 'b -> 'b) -> 'b -> t -> 'b
+  val fold_variables : (var -> 'b -> 'b) -> 'b -> t -> 'b
 
   (** [canon t gen] canonicalizes the term [t] using the variable generator [gen].
       Returns the canonicalized term as well as a map from old to canonicalized variables. *)
@@ -461,17 +461,17 @@ module type Zipper = sig
   (** [compare] is a total order. *)
   val compare : t -> t -> int
 
-  (** [equal s1 s2] tests whether [s1] and [s2] are equal. *)
+  (** [equal z1 z2] tests whether [z1] and [z2] are equal. *)
   val equal : t -> t -> bool
 
-  (** [hash s] is a hash of [s]. *)
+  (** [hash z] is a (non-cryptographically secure) hash of [z]. *)
   val hash : t -> int
 
   (** [cursor z] is the term under focus of [z]. *)
   val cursor : t -> term
 
-  (** [path z] is the path of the term under focus of [z]. *)
-  val path : t -> Path.t
+  (** [path z] is the path from the root to the term under focus of [z]. *)
+  val path : t -> int list
 
   (** [of_term t] is the zipper of the term [t]. *)
   val of_term : term -> t
@@ -492,4 +492,12 @@ module type Zipper = sig
 
   (** [replace t z] is the zipper obtained by replacing the term at the focus of [z] by [t]. *)
   val replace : term -> t -> t
+
+  (** [fold f acc z] folds a zipper over the subterms of [cursor z] (including [cursor z]). *)
+  val fold : (t -> 'a -> 'a) -> 'a -> t -> 'a
+
+  type var := int
+
+  (** [fold_variables f acc z] folds a zipper over the subterms of [cursor z] which are variables. *)
+  val fold_variables : (var -> t -> 'a -> 'a) -> 'a -> t -> 'a
 end

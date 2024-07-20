@@ -2,7 +2,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
   Intf.Zipper with type term = T.t = struct
   type term = T.t
 
-  type t = T.t * Path.t * zip
+  type t = T.t * zip
 
   and zip =
     | Zipper_top
@@ -14,7 +14,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
     | Zipper_prim3_2 of P.t * T.t * T.t * zip
     | Zipper_prim of P.t * T.t array * T.t array * zip
 
-  let rec compare ((t1, _, z1) : t) ((t2, _, z2) : t) =
+  let rec compare ((t1, z1) : t) ((t2, z2) : t) =
     let c = T.compare t1 t2 in
     if c <> 0 then c else compare_zip z1 z2
 
@@ -102,8 +102,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
       in
       aux 0
 
-  let rec equal ((t1, _, z1) : t) ((t2, _, z2) : t) =
-    T.equal t1 t2 && equal_zip z1 z2
+  let rec equal ((t1, z1) : t) ((t2, z2) : t) = T.equal t1 t2 && equal_zip z1 z2
 
   and equal_zip (z1 : zip) (z2 : zip) =
     z1 == z2
@@ -145,71 +144,75 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
     let len2 = Array.length t2 in
     if Int.equal len1 len2 then Array.for_all2 T.equal t1 t2 else false
 
-  let hash (term, _, zip) = Hashtbl.hash (T.hash term, zip)
+  let hash (term, zip) = Hashtbl.hash (T.hash term, zip)
 
-  let of_term term = (term, Path.root, Zipper_top)
+  let of_term term = (term, Zipper_top)
 
-  let cursor (term, _, _) = term
+  let cursor (term, _) = term
 
-  let path (_, path, _) = path
+  let rec path_of_zip : zip -> int list -> int list =
+   fun zip acc ->
+    match zip with
+    | Zipper_top -> acc
+    | Zipper_prim1 (_, zip) -> path_of_zip zip (0 :: acc)
+    | Zipper_prim2_0 (_, _, zip) -> path_of_zip zip (0 :: acc)
+    | Zipper_prim2_1 (_, _, zip) -> path_of_zip zip (1 :: acc)
+    | Zipper_prim3_0 (_, _, _, zip) -> path_of_zip zip (0 :: acc)
+    | Zipper_prim3_1 (_, _, _, zip) -> path_of_zip zip (1 :: acc)
+    | Zipper_prim3_2 (_, _, _, zip) -> path_of_zip zip (2 :: acc)
+    | Zipper_prim (_, l, _, zip) ->
+        let len = Array.length l in
+        path_of_zip zip (len :: acc)
 
-  let replace term (_term, path, zip) = (term, path, zip)
+  let path (_, zip) = path_of_zip zip []
 
-  let move_at_exn (term, path, zip) (i : int) =
+  let replace term (_term, zip) = (term, zip)
+
+  let move_at_exn (term, zip) (i : int) =
     T.destruct
       (fun prim subterms ->
         let arity = Array.length subterms in
         if arity = 0 then invalid_arg "move_at_exn"
         else
-          let path = Path.at_index i path in
           match (arity, i) with
-          | (1, _) -> (subterms.(0), path, Zipper_prim1 (prim, zip))
-          | (2, 0) ->
-              (subterms.(0), path, Zipper_prim2_0 (prim, subterms.(1), zip))
-          | (2, 1) ->
-              (subterms.(1), path, Zipper_prim2_1 (prim, subterms.(0), zip))
+          | (1, _) -> (subterms.(0), Zipper_prim1 (prim, zip))
+          | (2, 0) -> (subterms.(0), Zipper_prim2_0 (prim, subterms.(1), zip))
+          | (2, 1) -> (subterms.(1), Zipper_prim2_1 (prim, subterms.(0), zip))
           | (3, 0) ->
               ( subterms.(0),
-                path,
                 Zipper_prim3_0 (prim, subterms.(1), subterms.(2), zip) )
           | (3, 1) ->
               ( subterms.(1),
-                path,
                 Zipper_prim3_1 (prim, subterms.(0), subterms.(2), zip) )
           | (3, 2) ->
               ( subterms.(2),
-                path,
                 Zipper_prim3_2 (prim, subterms.(0), subterms.(1), zip) )
           | (arity, i) ->
               if i >= arity then invalid_arg "move_at_exn"
               else
                 let l = Array.sub subterms 0 i in
                 let r = Array.sub subterms (i + 1) (arity - i - 1) in
-                (subterms.(i), path, Zipper_prim (prim, l, r, zip)))
+                (subterms.(i), Zipper_prim (prim, l, r, zip)))
       (fun _ -> assert false)
       term
 
   let move_at zipper (i : int) =
     try Some (move_at_exn zipper i) with Invalid_argument _ -> None
 
-  let move_up (term, path, zip) =
-    match (zip, path) with
-    | (Zipper_top, _) -> None
-    | (Zipper_prim1 (prim, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| term |], path, zip)
-    | (Zipper_prim2_0 (prim, r, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| term; r |], path, zip)
-    | (Zipper_prim2_1 (prim, l, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| l; term |], path, zip)
-    | (Zipper_prim3_0 (prim, r, s, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| term; r; s |], path, zip)
-    | (Zipper_prim3_1 (prim, l, s, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| l; term; s |], path, zip)
-    | (Zipper_prim3_2 (prim, l, r, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim [| l; r; term |], path, zip)
-    | (Zipper_prim (prim, l, r, zip), Path.At_index (_, path)) ->
-        Some (T.prim prim (Array.concat [l; [| term |]; r]), path, zip)
-    | (_, Path.Root) -> assert false
+  let move_up (term, zip) =
+    match zip with
+    | Zipper_top -> None
+    | Zipper_prim1 (prim, zip) -> Some (T.prim prim [| term |], zip)
+    | Zipper_prim2_0 (prim, r, zip) -> Some (T.prim prim [| term; r |], zip)
+    | Zipper_prim2_1 (prim, l, zip) -> Some (T.prim prim [| l; term |], zip)
+    | Zipper_prim3_0 (prim, r, s, zip) ->
+        Some (T.prim prim [| term; r; s |], zip)
+    | Zipper_prim3_1 (prim, l, s, zip) ->
+        Some (T.prim prim [| l; term; s |], zip)
+    | Zipper_prim3_2 (prim, l, r, zip) ->
+        Some (T.prim prim [| l; r; term |], zip)
+    | Zipper_prim (prim, l, r, zip) ->
+        Some (T.prim prim (Array.concat [l; [| term |]; r]), zip)
 
   let rec unzip term zip =
     match zip with
@@ -226,5 +229,34 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
     | Zipper_prim (prim, l, r, zip) ->
         unzip (T.prim prim (Array.concat [l; [| term |]; r])) zip
 
-  let to_term (term, _, zip) = unzip term zip
+  let to_term (term, zip) = unzip term zip
+
+  let rec fold f acc zipper =
+    let acc = f zipper acc in
+    T.destruct
+      (fun _ subterms -> fold_subterms f acc subterms zipper 0)
+      (fun _ -> acc)
+      (cursor zipper)
+
+  and fold_subterms f acc subterms zipper i =
+    if i = Array.length subterms then acc
+    else
+      let acc = fold f acc (move_at_exn zipper i) in
+      fold_subterms f acc subterms zipper (i + 1)
+
+  let rec fold_variables f acc zipper =
+    let term = cursor zipper in
+    T.destruct
+      (fun _ subterms ->
+        let ub = T.ub term in
+        if Int_option.is_none ub then acc
+        else fold_variables_subterms f acc subterms zipper 0)
+      (fun v -> f v zipper acc)
+      term
+
+  and fold_variables_subterms f acc subterms zipper i =
+    if i = Array.length subterms then acc
+    else
+      let acc = fold_variables f acc (move_at_exn zipper i) in
+      fold_variables_subterms f acc subterms zipper (i + 1)
 end

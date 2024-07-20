@@ -1,5 +1,4 @@
 module Intf = Intf
-module Path = Path
 module Pattern = Pattern
 module Subst = Subst
 module Term = Term
@@ -10,7 +9,6 @@ module Zipper = Zipper
 module Make_internal (P : Intf.Signature) = struct
   module Default_map = Term.Default_map
   module Term = Term.Make_hash_consed (P) (Default_map)
-  module Path = Path
   module Zipper = Zipper.Make (P) (Term)
   module Pattern = Pattern.Make (P) (Term) (Zipper)
   module Subst = Subst.Make (P) (Default_map) (Term)
@@ -22,9 +20,6 @@ end
 module Make (P : Intf.Signature) : sig
   (** First-order terms. *)
   module Term : Intf.Term with type prim = P.t
-
-  (** Paths in first-order terms. *)
-  module Path : module type of Path
 
   (** Zipper. *)
   module Zipper : Intf.Zipper with type term = Term.t

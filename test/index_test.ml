@@ -1,7 +1,6 @@
 [@@@ocaml.warning "-32"]
 
 open Arith
-module Path = Term_indexing.Path
 
 module _ : Index_signature = Index
 
@@ -112,11 +111,11 @@ struct
         add subtree subtree
 
     let make_generalizations term =
-      Term.fold
-        (fun _subterm path acc ->
-          (path, Term.subst ~term ~path (Fun.const @@ var 0)) :: acc)
+      Zipper.fold
+        (fun zipper acc ->
+          (Zipper.path zipper, Zipper.(to_term (replace (var 0) zipper))) :: acc)
         []
-        term
+        (Zipper.of_term term)
 
     let index_query_generalize =
       Alcotest.test_case (named "index-query-generalize") `Quick (fun () ->
@@ -182,11 +181,7 @@ struct
           (* Iterate on all specializations of (add (var 0) (var 0)). We expect that the only
              solution found in the full tree. *)
           let query =
-            Term.subst
-              ~term:tree
-              ~path:
-                Path.(at_index 0 (at_index 0 (at_index 0 (at_index 0 root))))
-              (Fun.const @@ var 0)
+            Term.subst ~term:tree ~path:[0; 0; 0; 0] (Fun.const @@ var 0)
           in
           Index.iter_specialize
             (fun expr _ ->
@@ -296,8 +291,8 @@ module Test_against_reference (I : Index_signature) = struct
       | None -> float_
       | Some i -> Gen.return (var i)
     in
-    let l = Path.at_index 0 in
-    let r = Path.at_index 1 in
+    let l p = 0 :: p in
+    let r p = 1 :: p in
     let open Gen in
     fix
       (fun self (path, n) ->
@@ -311,11 +306,11 @@ module Test_against_reference (I : Index_signature) = struct
           | `Neg -> map neg (self (l path, n - 1))
           | `Var -> small_nat >>= fun i -> return (var i)
           | `Float -> float_)
-      (Path.root, 5)
+      ([], 5)
 
   let gen =
     term_gen (fun path ->
-        let hash = Path.hash path in
+        let hash = Hashtbl.hash path in
         Some (hash mod 100))
 
   let gen_terms = Gen.small_list gen

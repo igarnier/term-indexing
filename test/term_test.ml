@@ -8,7 +8,10 @@ let fold_lexicographic =
     Arith.gen
     (fun term ->
       let paths_sorted_lexicographically =
-        Term.fold (fun _term path acc -> Path.reverse path :: acc) [] term
+        Zipper.fold
+          (fun zipper acc -> Zipper.path zipper :: acc)
+          []
+          (Zipper.of_term term)
         |> List.rev
       in
       let sort =
@@ -20,10 +23,10 @@ let fold_variables =
   Alcotest.test_case "fold_variables" `Quick (fun () ->
       let term = Term.(add (var 0) (var 1)) in
       let vars =
-        Term.fold_variables
-          (fun var path acc -> (Path.reverse path, var) :: acc)
+        Zipper.fold_variables
+          (fun var zipper acc -> (Zipper.path zipper, var) :: acc)
           []
-          term
+          (Zipper.of_term term)
       in
       let expected = [([1], 1); ([0], 0)] in
       Alcotest.(check (list (pair (list int) int))) "variables" expected vars)
@@ -51,12 +54,12 @@ let canon_variable_count =
     Arith.gen
     (fun term ->
       let vars =
-        Term.fold_variables (fun var _path acc -> var :: acc) [] term
+        Term.fold_variables (fun var acc -> var :: acc) [] term
         |> List.sort_uniq Int.compare |> List.length
       in
       let (_, canon) = Term.canon term (ints ()) in
       let canon_vars =
-        Term.fold_variables (fun var _path acc -> var :: acc) [] canon
+        Term.fold_variables (fun var acc -> var :: acc) [] canon
         |> List.sort_uniq Int.compare |> List.length
       in
       Int.equal vars canon_vars)

@@ -59,22 +59,17 @@ let basic_rewrite =
       let matches =
         Pattern.all_matches [pattern] expression |> List.map Zipper.path
       in
-      let expected =
-        Path.
-          [ at_index 0 (at_index 1 (at_index 1 root));
-            at_index 0 (at_index 1 root);
-            at_index 0 root ]
-      in
+      let expected = [[1; 1; 0]; [1; 0]; [0]] in
       let () =
-        if List.equal Path.equal matches expected then ()
+        if List.equal (List.equal Int.equal) matches expected then ()
         else
           Alcotest.failf
             "all_matches %a: expected %a, got %a@."
             Pattern.pp
             pattern
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             expected
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             matches
       in
       (* Rewrite deeper matches first *)
@@ -90,7 +85,7 @@ let basic_rewrite =
       else
         Alcotest.failf
           "rewrite_at %a %a: expected %a, got %a@."
-          (Fmt.Dump.list Path.pp)
+          Fmt.Dump.(list (list Fmt.int))
           matches
           Term.pp
           expression
@@ -121,34 +116,30 @@ let focused_rewrite =
         Pattern.all_matches [pattern] expression |> List.map Zipper.path
       in
       let () =
-        let expected =
-          Path.
-            [ at_index 0 (at_index 1 root);
-              at_index 0 (at_index 1 (at_index 1 root)) ]
-        in
-        if List.equal Path.equal matches expected then ()
+        let expected = [[1; 0]; [1; 1; 0]] in
+        if List.equal (List.equal Int.equal) matches expected then ()
         else
           Alcotest.failf
             "all_matches %a: expected %a, got %a@."
             Pattern.pp
             pattern
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             expected
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             matches
       in
       let () =
         (* Only one focused subterm in the pattern so only one element in the result list *)
-        let expected = Path.[at_index 0 (at_index 1 (at_index 1 root))] in
-        if List.equal Path.equal first_matches expected then ()
+        let expected = [[1; 1; 0]] in
+        if List.equal (List.equal Int.equal) first_matches expected then ()
         else
           Alcotest.failf
             "first_matches %a: expected %a, got %a@."
             Pattern.pp
             pattern
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             expected
-            (Fmt.Dump.list Path.pp)
+            Fmt.Dump.(list (list Fmt.int))
             first_matches
       in
       (* Rewrite deeper matches first *)
@@ -166,7 +157,7 @@ let focused_rewrite =
       else
         Alcotest.failf
           "rewrite_at %a %a: expected@.%a@.got@.%a@."
-          (Fmt.Dump.list Path.pp)
+          Fmt.Dump.(list (list Fmt.int))
           matches
           Term.pp
           expression

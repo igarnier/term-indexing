@@ -125,11 +125,12 @@ module Stub () = struct
       add subtree subtree
 
   let make_generalizations term =
-    Term.fold
-      (fun _subterm path acc ->
-        (path, Term.subst ~term ~path (Fun.const @@ var 0)) :: acc)
+    Zipper.fold
+      (fun zipper acc ->
+        let path = Zipper.path zipper in
+        (path, Zipper.to_term (Zipper.replace (var 0) zipper)) :: acc)
       []
-      term
+      (Zipper.of_term term)
 
   let index = I.create ()
 

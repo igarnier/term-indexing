@@ -9,9 +9,9 @@ and 'prim desc = private
           contained in [ts]. *)
   | Var of int  (** [Var v] is a variable equal to [v]. *)
 
-val fold : ('a term -> Path.t -> 'b -> 'b) -> 'b -> 'a term -> 'b
+val fold : ('a term -> 'b -> 'b) -> 'b -> 'a term -> 'b
 
-exception Get_subterm_oob of Path.forward * int
+exception Get_subterm_oob of int list * int
 
 (** The following functor instantiates a module to manipulate hash-consed terms over the
     signature [P], using an implementation of persistent maps given by [M]. *)

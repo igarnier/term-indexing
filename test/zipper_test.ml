@@ -49,27 +49,23 @@ let term_gen : Term.t Gen.t =
       else
         symbol >>= function
         | `Zero -> return zero
-        | `One -> map one (self (Path.at_index 0 path, n - 1))
-        | `Two ->
-            map2
-              two
-              (self (Path.at_index 0 path, n - 1))
-              (self (Path.at_index 1 path, n - 1))
+        | `One -> map one (self (0 :: path, n - 1))
+        | `Two -> map2 two (self (0 :: path, n - 1)) (self (1 :: path, n - 1))
         | `Three ->
             map3
               three
-              (self (Path.at_index 0 path, n - 1))
-              (self (Path.at_index 1 path, n - 1))
-              (self (Path.at_index 2 path, n - 1))
+              (self (0 :: path, n - 1))
+              (self (1 :: path, n - 1))
+              (self (2 :: path, n - 1))
         | `Four ->
-            let* t0 = self (Path.at_index 0 path, n - 1)
-            and* t1 = self (Path.at_index 1 path, n - 1)
-            and* t2 = self (Path.at_index 2 path, n - 1)
-            and* t3 = self (Path.at_index 3 path, n - 1) in
+            let* t0 = self (0 :: path, n - 1)
+            and* t1 = self (1 :: path, n - 1)
+            and* t2 = self (2 :: path, n - 1)
+            and* t3 = self (3 :: path, n - 1) in
             return (four t0 t1 t2 t3))
-    (Path.root, 5)
+    ([], 5)
 
-let path : Term.t -> Path.t Gen.t =
+let path : Term.t -> int list Gen.t =
  fun t ->
   let open Gen in
   let rec aux path t =
@@ -81,12 +77,12 @@ let path : Term.t -> Path.t Gen.t =
           let* c = Gen.bool in
           if c then
             let* i = Gen.int_bound (arity - 1) in
-            aux (Path.at_index i path) subterms.(i)
+            aux (i :: path) subterms.(i)
           else return path)
       (fun _ -> return path)
       t
   in
-  aux Path.root t
+  aux [] t
 
 let rec guide_zip path zip =
   match path with
@@ -110,7 +106,7 @@ let test_zip_unzip =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip = guide_zip (List.rev p) (Z.of_term t) in
   let unzip = Z.to_term zip in
   if Term.equal t unzip then true
   else
@@ -120,7 +116,7 @@ let test_zip_unzip =
       t
       Term.pp
       unzip
-      Path.pp
+      Fmt.Dump.(list Fmt.int)
       p
 
 let test_zip_move_up =
@@ -131,7 +127,7 @@ let test_zip_move_up =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip = guide_zip (List.rev p) (Z.of_term t) in
   let unzip =
     let rec fixp zip =
       match Z.move_up zip with None -> zip | Some zip' -> fixp zip'
@@ -146,7 +142,7 @@ let test_zip_move_up =
       t
       Term.pp
       unzip
-      Path.pp
+      Fmt.Dump.(list Fmt.int)
       p
 
 let test_zip_compare_eq =
@@ -157,14 +153,14 @@ let test_zip_compare_eq =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip = guide_zip (List.rev p) (Z.of_term t) in
   if Z.compare zip zip = 0 then true
   else
     QCheck2.Test.fail_reportf
       "compare zip zip =/= 0\nterm = %a\npath = %a"
       Term.pp
       t
-      Path.pp
+      Fmt.Dump.(list Fmt.int)
       p
 
 let test_zip_eq =
@@ -175,22 +171,39 @@ let test_zip_eq =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
-  let zip' = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip = guide_zip (List.rev p) (Z.of_term t) in
+  let zip' = guide_zip (List.rev p) (Z.of_term t) in
   if Z.equal zip zip' then true
   else
     QCheck2.Test.fail_reportf
       "eq zip zip =/= true\nterm = %a\npath = %a"
       Term.pp
       t
-      Path.pp
+      Fmt.Dump.(list Fmt.int)
       p
+
+let test_zip_set =
+  QCheck2.Test.make ~count:1000 ~name:"zip_set" term_gen @@ fun t ->
+  let module ZS = Set.Make (Zipper) in
+  let zipper_set =
+    Z.fold (fun zip acc -> ZS.add zip acc) ZS.empty (Z.of_term t)
+  in
+  let card = ZS.cardinal zipper_set in
+  let node_count = Term.fold (fun _ acc -> acc + 1) 0 t in
+  if Int.equal card node_count then true
+  else
+    QCheck2.Test.fail_reportf
+      "cardinal zip_set =/= node_count\nterm = %a\ncard = %d\nnode_count = %d"
+      Term.pp
+      t
+      card
+      node_count
 
 let test_zip_hash =
   Alcotest.test_case "zip_hash" `Quick @@ fun () ->
   let t = Gen.generate1 term_gen in
   let p = Gen.generate1 (path t) in
-  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip = guide_zip (List.rev p) (Z.of_term t) in
   ignore (Z.hash zip)
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
@@ -199,5 +212,5 @@ let () =
   Alcotest.run
     "path"
     [ ("zip_unzip", conv [test_zip_unzip; test_zip_move_up]);
-      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq]);
+      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]);
       ("zip_hash", [test_zip_hash]) ]

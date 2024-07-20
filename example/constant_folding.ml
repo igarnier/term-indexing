@@ -10,10 +10,10 @@ module Prim = struct
   let hash = Hashtbl.hash
 
   let pp fmtr = function
-    | Add -> Format.fprintf fmtr "Add"
-    | Mul -> Format.fprintf fmtr "Mul"
-    | Neg -> Format.fprintf fmtr "Neg"
-    | Float f -> Format.fprintf fmtr "%.1f" f
+    | Add -> Fmt.pf fmtr "Add"
+    | Mul -> Fmt.pf fmtr "Mul"
+    | Neg -> Fmt.pf fmtr "Neg"
+    | Float f -> Fmt.pf fmtr "%.1f" f
 
   let arity = function Add | Mul -> 2 | Neg -> 1 | Float _ -> 0
 end
@@ -31,16 +31,33 @@ let float f = Term.prim (Prim.Float f) [||]
 
 let var s = Term.var s
 
-(* example: path, folding *)
-
 let t = add (var 0) (mul (var 1) (var 1))
 
-let all_subterms = Term.fold (fun subt p acc -> (p, subt) :: acc) [] t
+(* example: zipper, folding *)
 
-let () =
-  List.iter
-    (fun (p, subt) -> Format.printf "%a -> %a@." Path.pp p Term.pp subt)
-    all_subterms
+let zipper = Zipper.of_term t
+
+let left = Zipper.move_at zipper 0 |> Option.get
+
+let () = Fmt.pr "left: %a@." Term.pp (Zipper.cursor left)
+
+let right = Zipper.move_at zipper 1 |> Option.get
+
+let () = Fmt.pr "right: %a@." Term.pp (Zipper.cursor right)
+
+let rewritten = Zipper.replace (float 42.0) right |> Zipper.to_term
+
+let () = Fmt.pr "rewritten: %a@." Term.pp rewritten
+
+let all_subterms =
+  Zipper.fold (fun z acc -> Zipper.cursor z :: acc) [] (Zipper.of_term t)
+
+let () = Fmt.pr "%a@." (Fmt.Dump.list Term.pp) all_subterms
+
+let all_variables =
+  Zipper.fold_variables (fun v _z acc -> v :: acc) [] (Zipper.of_term t)
+
+let () = Fmt.pr "%a@." Fmt.Dump.(list Fmt.int) all_variables
 
 (* Example: rewriting *)
 
@@ -87,7 +104,7 @@ let rec rewrite_until_fixpoint term =
         | Some reduced -> reduced
         | None -> failwith "can't happen"
       in
-      Format.printf "%a -> %a@." Term.pp term Term.pp rewritten ;
+      Fmt.pr "%a -> %a@." Term.pp term Term.pp rewritten ;
       rewrite_until_fixpoint rewritten
 
 let expression = add (float 1.0) (add (float 2.0) (mul (float 3.0) (float 4.0)))
@@ -111,7 +128,7 @@ let term = add (var 1) (mul (var 2) (var 2))
 
 let substituted = Subst.lift subst term
 
-let () = Format.printf "%a@." Term.pp substituted
+let () = Fmt.pr "%a@." Term.pp substituted
 
 (* Example: unification *)
 
@@ -126,9 +143,9 @@ let () =
   | None -> failwith "unification failed"
   | Some uf_state' ->
       let subst = Subst.Unification.subst uf_state' in
-      Format.printf "%a@." Subst.pp subst
+      Fmt.pr "%a@." Subst.pp subst
 
-let () = Format.printf "%a@." Subst.pp subst
+let () = Fmt.pr "%a@." Subst.pp subst
 
 (* Example: indexing *)
 
@@ -145,47 +162,31 @@ let index = Index.create ()
 
 let () = List.iteri (fun i key -> Index.insert key i index) keys
 
-let () =
-  Index.iter (fun key v -> Format.printf "%a -> %d@." Term.pp key v) index
+let () = Index.iter (fun key v -> Fmt.pr "%a -> %d@." Term.pp key v) index
 
 let query = add (mul (float 3.0) (var 0)) (var 2)
 
-let () = Format.printf "unifiable@."
+let () = Fmt.pr "unifiable@."
 
 let () =
-  Index.iter_unifiable
-    (fun key _ -> Format.printf "%a@." Term.pp key)
-    index
-    query
+  Index.iter_unifiable (fun key _ -> Fmt.pr "%a@." Term.pp key) index query
 
-let () = Format.printf "specialize@."
+let () = Fmt.pr "specialize@."
 
 let () =
-  Index.iter_specialize
-    (fun key _ -> Format.printf "%a@." Term.pp key)
-    index
-    query
+  Index.iter_specialize (fun key _ -> Fmt.pr "%a@." Term.pp key) index query
 
-let () = Format.printf "generalize@."
+let () = Fmt.pr "generalize@."
 
 let () =
-  Index.iter_generalize
-    (fun key _ -> Format.printf "%a@." Term.pp key)
-    index
-    query
+  Index.iter_generalize (fun key _ -> Fmt.pr "%a@." Term.pp key) index query
 
 let query = neg (var 0)
 
 let () =
-  Index.iter_specialize
-    (fun key _ -> Format.printf "%a@." Term.pp key)
-    index
-    query
+  Index.iter_specialize (fun key _ -> Fmt.pr "%a@." Term.pp key) index query
 
 let query = neg (neg (add (float 1.0) (float 2.0)))
 
 let () =
-  Index.iter_generalize
-    (fun key _ -> Format.printf "%a@." Term.pp key)
-    index
-    query
+  Index.iter_generalize (fun key _ -> Fmt.pr "%a@." Term.pp key) index query

@@ -35,10 +35,10 @@ module Prim : Intf.Signature with type t = prim = struct
   let hash = Hashtbl.hash
 
   let pp fmtr = function
-    | Add -> Format.fprintf fmtr "Add"
-    | Mul -> Format.fprintf fmtr "Mul"
-    | Neg -> Format.fprintf fmtr "Neg"
-    | Float f -> Format.fprintf fmtr "%.1f" f
+    | Add -> Fmt.pf fmtr "Add"
+    | Mul -> Fmt.pf fmtr "Mul"
+    | Neg -> Fmt.pf fmtr "Neg"
+    | Float f -> Fmt.pf fmtr "%.1f" f
 
   (* Each primitive is associated to an arity, which maps each constructor to its number
      of expected arguments;
@@ -83,36 +83,69 @@ The mathematical expression {m x_0 + x_1 * x_1} can be represented by the term
 let t = add (var 0) (mul (var 1) (var 1))
 ]}
 
-{1 Folding over terms}
+{1 Manipulating terms with zippers}
 
-{{!Term_indexing.Term.Make_hash_consed}[Term]} implements functions to fold over terms
-and perform basic rewriting operations. Rewriting consists in replacing a subterm at a given
-{{!Term_indexing.Path.t}[Path.t]} with
-anoter term. For instance, for [t = add (var 0) (mul (var 1) (var 1))]:
-{ul
- {- the subterm at [p = Path.root] is [t] itself}
- {- the subterm at [p = at_index 0 Path.root] is [var 0]}
- {- the subterm at [p = at_index 1 Path.root] is [mul (var 1) (var 1)]}
- {- the subterm at [p = at_index 0 (at_index 1 Path.root)] is [(var 1)]}}
-
-The function {{!Term_indexing.Term.fold}[Term.fold]} allows to fold over all subterms of [t]
-along with their paths in [t]. Let's try:
-
+{{: https://en.wikipedia.org/wiki/Zipper_(data_structure)}Zippers} allow to navigate and edit
+first-order terms in a purely applicative way. A zipper corresponds to a term in-context.
+One embeds a term inside an empty context using {{!Term_indexing.Intf.Zipper.of_term}[Zipper.of_term]}. One can zoom in on a subterm (reps. zoom out) using
+{{!Term_indexing.Intf.Zipper.move_at}[Zipper.move_at]}
+(resp. {{!Term_indexing.Intf.Zipper.move_up}[Zipper.move_up]}).
 {[
-let all_subterms = Term.fold (fun subt p acc -> (p, subt) :: acc) [] t
+let zipper = Zipper.of_term t
 
-let () =
-  List.iter
-    (fun (p, subt) -> Format.printf "%a -> %a@." Path.pp p Term.pp subt)
-    all_subterms
+let left = Zipper.move_at zipper 0 |> Option.get
+
+let () = Fmt.pr "left: %a@." Term.pp (Zipper.cursor left)
+
+let right = Zipper.move_at zipper 1 |> Option.get
+
+let () = Fmt.pr "right: %a@." Term.pp (Zipper.cursor right)
 ]}
 
 {v
-1 -> 1 -> * -> V(1)
-0 -> 1 -> * -> V(1)
-1 -> * -> Mul(V(1), V(1))
-0 -> * -> V(0)
-* -> Add(V(0), Mul(V(1), V(1)))
+left: V(0)
+right: Mul(V(1), V(1))
+v}
+
+{{!Term_indexing.Intf.Zipper.replace}[Zipper.replace]} allows to replace the term under focus by another one.
+Finally, one can retrieve a term using {{!Term_indexing.Intf.Zipper.to_term}[Zipper.to_term]}.
+
+{[
+let rewritten = Zipper.replace (float 42.0) right |> Zipper.to_term
+
+let () = Fmt.pr "rewritten: %a@." Term.pp rewritten
+]}
+
+{2 Folding over terms}
+
+The function {{!Term_indexing.Intf.Zipper.fold}[Zipper.fold]} allows to fold with a zipper over all subterms of a given term. The term is traversed in a preorder, depth-first, left-to-right fashion. Let's try:
+
+{[
+let all_subterms =
+  Zipper.fold (fun z acc -> Zipper.cursor z :: acc) [] (Zipper.of_term t)
+
+let () = Fmt.pr "%a@." (Fmt.Dump.list Term.pp) all_subterms
+]}
+
+{v
+[V(1); V(1); Mul(V(1), V(1)); V(0); Add(V(0), Mul(V(1), V(1)))]
+v}
+
+Note that since the subterms are accumulated by pushing on a list, we get the results in reverse.
+
+{2 Folding over variables only}
+
+We can also fold over variables only. The term representation allows to skip entirely variable-free subtrees when doing so.
+
+{[
+let all_variables =
+  Zipper.fold_variables (fun v _z acc -> v :: acc) [] (Zipper.of_term t)
+
+let () = Fmt.pr "%a@." Fmt.Dump.(list Fmt.int) all_variables
+]}
+
+{v
+[1; 1; 0]
 v}
 
 {1 Rewriting}
@@ -187,14 +220,13 @@ let rec rewrite_until_fixpoint term =
   let matches = Pattern.first_match [add_patt; mul_patt; neg_patt] term in
   match matches with
   | [] -> term
-  | path :: _ ->
+  | zipper :: _ ->
       let rewritten =
-        Term.subst ~term ~path (fun e ->
-            match reduce e with
-            | Some reduced -> reduced
-            | None -> failwith "can't happen")
+        match reduce (Zipper.cursor zipper) with
+        | Some reduced -> reduced
+        | None -> failwith "can't happen"
       in
-      Format.printf "%a -> %a@." Term.pp term Term.pp rewritten ;
+      Fmt.pr "%a -> %a@." Term.pp term Term.pp rewritten ;
       rewrite_until_fixpoint rewritten
 ]}
 Let's try this out on some dummy term.
@@ -298,7 +330,7 @@ let () =
   | None -> failwith "unification failed"
   | Some uf_state' ->
       let subst = Subst.Unification.subst uf_state' in
-      Format.printf "%a@." Subst.pp subst
+      Fmt.pr "%a@." Subst.pp subst
 ]}
 
 {v
@@ -345,7 +377,7 @@ stored in the index using {{!Term_indexing.Intf.Term_index.iter}[Index.iter]}
 {[
 let () =
   Index.iter
-    (fun key v -> Format.printf "%a -> %d@." Term.pp key v)
+    (fun key v -> Fmt.pr "%a -> %d@." Term.pp key v)
     index
 ]}
 Note that the iteration order is not the insertion one:
@@ -364,7 +396,7 @@ let query = add (mul (float 3.0) (var 0)) (var 2)
 
 let () =
   Index.iter_unifiable
-    (fun key v -> Format.printf "%a -> %d@." Term.pp key)
+    (fun key v -> Fmt.pr "%a -> %d@." Term.pp key)
     index
     query
 ]}

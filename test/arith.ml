@@ -181,8 +181,8 @@ let term_gen canonical_var : Term.t Gen.t =
     | None -> float_
     | Some i -> Gen.return (var i)
   in
-  let l = Path.at_index 0 in
-  let r = Path.at_index 1 in
+  let l p = 0 :: p in
+  let r p = 1 :: p in
   let open Gen in
   fix
     (fun self (path, n) ->
@@ -198,18 +198,18 @@ let term_gen canonical_var : Term.t Gen.t =
             bind bool (fun indicator ->
                 if indicator then
                   (* We forbid toplevel indicator variables *)
-                  if Path.equal path Path.root then float_ else try_var path
+                  if path = [] then float_ else try_var path
                 else small_nat >|= var)
         | `Float -> float_)
-    (Path.root, 5)
+    ([], 5)
 
 (* A naive generator *)
 let gen =
   term_gen (fun path ->
-      let hash = Path.hash path in
+      let hash = Hashtbl.hash path in
       Some (hash mod 100))
 
-let memoize_enum : int -> Path.t -> int option =
+let memoize_enum : int -> int list -> int option =
  fun upper_bound ->
   let table = Hashtbl.create 10 in
   let c = ref 0 in

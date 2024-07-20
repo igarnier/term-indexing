@@ -41,25 +41,25 @@ let rec pp_sexp pp_prim fmtr term =
            (pp_sexp pp_prim))
         subterms
 
-(* Fold over the term. Paths are in lexicographic order when reversed.
+(* Fold over the term.
    TODO: make tail-recursive if needed. *)
-let rec fold f acc term path =
-  let acc = f term path acc in
+let rec fold f acc term =
+  let acc = f term acc in
   match term.Hashcons.node with
   | Var _ -> acc
-  | Prim (_, subterms, _) -> fold_subterms f acc subterms path 0
+  | Prim (_, subterms, _) -> fold_subterms f acc subterms 0
 
-and fold_subterms f acc subterms path i =
+and fold_subterms f acc subterms i =
   if i = Array.length subterms then acc
   else
-    let acc = fold f acc subterms.(i) (Path.at_index i path) in
-    fold_subterms f acc subterms path (i + 1)
+    let acc = fold f acc subterms.(i) in
+    fold_subterms f acc subterms (i + 1)
 
-let fold f acc term = fold f acc term Path.root
+let fold f acc term = fold f acc term
 
-exception Get_subterm_oob of Path.forward * int
+exception Get_subterm_oob of int list * int
 
-let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
+let rec get_subterm : 'prim term -> int list -> 'prim term =
  fun term path ->
   match path with
   | [] -> term
@@ -68,13 +68,8 @@ let rec get_subterm_fwd : 'prim term -> Path.forward -> 'prim term =
       | Prim (_, subterms, _) ->
           let len = Array.length subterms in
           if index >= len then raise (Get_subterm_oob (path, len))
-          else get_subterm_fwd subterms.(index) l
+          else get_subterm subterms.(index) l
       | Var _ -> raise (Get_subterm_oob (path, 0)))
-
-let get_subterm : 'prim term -> Path.t -> 'prim term =
- fun term path ->
-  let path = Path.reverse path in
-  get_subterm_fwd term path
 
 module Make_hash_consed
     (P : Intf.Signature)
@@ -169,20 +164,20 @@ module Make_hash_consed
   (* re-export generic fold *)
   let fold = fold
 
-  let rec fold_variables f acc term path =
+  let rec fold_variables f acc term =
     match term.Hashcons.node with
-    | Var v -> f v path acc
+    | Var v -> f v acc
     | Prim (_, subterms, ub) ->
         if Int_option.is_none ub then acc
-        else fold_variables_subterms f acc subterms path 0
+        else fold_variables_subterms f acc subterms 0
 
-  and fold_variables_subterms f acc subterms path i =
+  and fold_variables_subterms f acc subterms i =
     if i = Array.length subterms then acc
     else
-      let acc = fold_variables f acc subterms.(i) (Path.at_index i path) in
-      fold_variables_subterms f acc subterms path (i + 1)
+      let acc = fold_variables f acc subterms.(i) in
+      fold_variables_subterms f acc subterms (i + 1)
 
-  let fold_variables f acc term = fold_variables f acc term Path.root
+  let fold_variables f acc term = fold_variables f acc term
 
   let rec map_variables f term =
     match term.Hashcons.node with
@@ -190,13 +185,10 @@ module Make_hash_consed
         prim p (Array.map (fun t -> map_variables f t) subterms)
     | Var v -> f v
 
-  (* re-export generic get_subterm_fwd *)
-  let get_subterm_fwd = get_subterm_fwd
-
   (* re-export generic get_subterm *)
   let get_subterm = get_subterm
 
-  let rec subst_aux : term:t -> path:Path.forward -> (t -> t) -> t =
+  let rec subst : term:t -> path:int list -> (t -> t) -> t =
    fun ~term ~path f ->
     match path with
     | [] -> f term
@@ -205,23 +197,18 @@ module Make_hash_consed
         | Var _ -> raise (Get_subterm_oob (path, 0))
         | Prim (s, subterms, _ub) -> prim s (subst_at subterms index l f))
 
-  and subst_at : t array -> int -> Path.forward -> (t -> t) -> t array =
+  and subst_at : t array -> int -> int list -> (t -> t) -> t array =
    fun subterms index path f ->
     Array.mapi
-      (fun i term -> if i = index then subst_aux ~term ~path f else term)
+      (fun i term -> if i = index then subst ~term ~path f else term)
       subterms
-
-  let subst : term:t -> path:Path.t -> (t -> t) -> t =
-   fun ~term ~path f ->
-    let path = Path.reverse path in
-    subst_aux ~term ~path f
 
   (* TODO optim: consider using an extensible array from int to int instead of an M.t *)
   let canon : t -> (unit -> int) -> int M.t * t =
    fun term enum ->
     let acc =
       fold_variables
-        (fun v _path canon_map ->
+        (fun v canon_map ->
           match M.find_opt v canon_map with
           | None ->
               let canon_v = enum () in
