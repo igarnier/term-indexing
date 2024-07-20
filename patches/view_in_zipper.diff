@@ -1,0 +1,116 @@
+diff --git a/lib/zipper.ml b/lib/zipper.ml
+index d563a8f..c344eb0 100644
+--- a/lib/zipper.ml
++++ b/lib/zipper.ml
+@@ -2,6 +2,8 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+   Intf.Zipper with type term = T.t = struct
+   type term = T.t
+ 
++  type view = { arr : T.t array; start : int; length : int }
++
+   type t = T.t * Path.t * zip
+ 
+   and zip =
+@@ -12,7 +14,36 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+     | Zipper_prim3_0 of P.t * T.t * T.t * zip
+     | Zipper_prim3_1 of P.t * T.t * T.t * zip
+     | Zipper_prim3_2 of P.t * T.t * T.t * zip
+-    | Zipper_prim of P.t * T.t array * T.t array * zip
++    | Zipper_prim of P.t * view * view * zip
++
++  let view arr start length = { arr; start; length }
++
++  let view_get v i = Array.unsafe_get v.arr (v.start + i)
++
++  let view_equal v1 v2 =
++    let exception Not_equal in
++    let len1 = v1.length in
++    let len2 = v2.length in
++    if Int.equal len1 len2 then
++      try
++        for i = 0 to len1 - 1 do
++          if T.equal (view_get v1 i) (view_get v2 i) then ()
++          else raise Not_equal
++        done ;
++        true
++      with Not_equal -> false
++    else false
++
++  let to_array { arr; start; length } = Array.sub arr start length
++
++  (* let concat v1 elt v2 = Array.concat [to_array v1; [| elt |]; to_array v2] *)
++
++  let concat v1 elt v2 =
++    let arr = Array.make (v1.length + 1 + v2.length) elt in
++    Array.blit v1.arr v1.start arr 0 v1.length ;
++    (* elt is located between v1 and v2 *)
++    Array.blit v2.arr v2.start arr (v1.length + 1) v2.length ;
++    arr
+ 
+   let rec compare ((t1, _, z1) : t) ((t2, _, z2) : t) =
+     let c = T.compare t1 t2 in
+@@ -89,15 +120,15 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+               let c = term_array_compare r1 r2 in
+               if c <> 0 then c else compare_zip z1 z2
+ 
+-  and term_array_compare (t1 : T.t array) (t2 : T.t array) =
+-    let len1 = Array.length t1 in
+-    let len2 = Array.length t2 in
++  and term_array_compare (t1 : view) (t2 : view) =
++    let len1 = t1.length in
++    let len2 = t2.length in
+     if len1 <> len2 then len1 - len2
+     else
+       let rec aux i =
+         if i = len1 then 0
+         else
+-          let c = T.compare t1.(i) t2.(i) in
++          let c = T.compare (view_get t1 i) (view_get t2 i) in
+           if c <> 0 then c else aux (i + 1)
+       in
+       aux 0
+@@ -137,13 +168,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+     | (Zipper_prim3_2 _, _) -> false
+     | (_, Zipper_prim3_2 _) -> false
+     | (Zipper_prim (p1, l1, r1, z1), Zipper_prim (p2, l2, r2, z2)) ->
+-        P.equal p1 p2 && term_array_equal l1 l2 && term_array_equal r1 r2
+-        && equal_zip z1 z2
+-
+-  and term_array_equal (t1 : T.t array) (t2 : T.t array) =
+-    let len1 = Array.length t1 in
+-    let len2 = Array.length t2 in
+-    if Int.equal len1 len2 then Array.for_all2 T.equal t1 t2 else false
++        P.equal p1 p2 && view_equal l1 l2 && view_equal r1 r2 && equal_zip z1 z2
+ 
+   let hash (term, _, zip) = Hashtbl.hash (T.hash term, zip)
+ 
+@@ -183,8 +208,8 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+           | (arity, i) ->
+               if i >= arity then invalid_arg "move_at_exn"
+               else
+-                let l = Array.sub subterms 0 i in
+-                let r = Array.sub subterms (i + 1) (arity - i - 1) in
++                let l = view subterms 0 i in
++                let r = view subterms (i + 1) (arity - i - 1) in
+                 (subterms.(i), path, Zipper_prim (prim, l, r, zip)))
+       (fun _ -> assert false)
+       term
+@@ -208,7 +233,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+     | (Zipper_prim3_2 (prim, l, r, zip), Path.At_index (_, path)) ->
+         Some (T.prim prim [| l; r; term |], path, zip)
+     | (Zipper_prim (prim, l, r, zip), Path.At_index (_, path)) ->
+-        Some (T.prim prim (Array.concat [l; [| term |]; r]), path, zip)
++        Some (T.prim prim (concat l term r), path, zip)
+     | (_, Path.Root) -> assert false
+ 
+   let rec unzip term zip =
+@@ -223,8 +248,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+         unzip (T.prim prim [| l; term; s |]) zip
+     | Zipper_prim3_2 (prim, l, r, zip) ->
+         unzip (T.prim prim [| l; r; term |]) zip
+-    | Zipper_prim (prim, l, r, zip) ->
+-        unzip (T.prim prim (Array.concat [l; [| term |]; r])) zip
++    | Zipper_prim (prim, l, r, zip) -> unzip (T.prim prim (concat l term r)) zip
+ 
+   let to_term (term, _, zip) = unzip term zip
+ end
