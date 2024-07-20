@@ -19,73 +19,75 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
     if c <> 0 then c else compare_zip z1 z2
 
   and compare_zip (z1 : zip) (z2 : zip) =
-    match (z1, z2) with
-    | (Zipper_top, Zipper_top) -> 0
-    | (Zipper_top, _) -> -1
-    | (_, Zipper_top) -> 1
-    | (Zipper_prim1 (p1, z1), Zipper_prim1 (p2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim1 _, _) -> -1
-    | (_, Zipper_prim1 _) -> 1
-    | (Zipper_prim2_0 (p1, t1, z1), Zipper_prim2_0 (p2, t2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = T.compare t1 t2 in
+    if z1 == z2 then 0
+    else
+      match (z1, z2) with
+      | (Zipper_top, Zipper_top) -> 0
+      | (Zipper_top, _) -> -1
+      | (_, Zipper_top) -> 1
+      | (Zipper_prim1 (p1, z1), Zipper_prim1 (p2, z2)) ->
+          let c = P.compare p1 p2 in
           if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim2_0 _, _) -> -1
-    | (_, Zipper_prim2_0 _) -> 1
-    | (Zipper_prim2_1 (p1, t1, z1), Zipper_prim2_1 (p2, t2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = T.compare t1 t2 in
-          if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim2_1 _, _) -> -1
-    | (_, Zipper_prim2_1 _) -> 1
-    | (Zipper_prim3_0 (p1, t1, t2, z1), Zipper_prim3_0 (p2, u1, u2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = T.compare t1 u1 in
+      | (Zipper_prim1 _, _) -> -1
+      | (_, Zipper_prim1 _) -> 1
+      | (Zipper_prim2_0 (p1, t1, z1), Zipper_prim2_0 (p2, t2, z2)) ->
+          let c = P.compare p1 p2 in
           if c <> 0 then c
           else
-            let c = T.compare t2 u2 in
+            let c = T.compare t1 t2 in
             if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim3_0 _, _) -> -1
-    | (_, Zipper_prim3_0 _) -> 1
-    | (Zipper_prim3_1 (p1, t1, t2, z1), Zipper_prim3_1 (p2, u1, u2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = T.compare t1 u1 in
+      | (Zipper_prim2_0 _, _) -> -1
+      | (_, Zipper_prim2_0 _) -> 1
+      | (Zipper_prim2_1 (p1, t1, z1), Zipper_prim2_1 (p2, t2, z2)) ->
+          let c = P.compare p1 p2 in
           if c <> 0 then c
           else
-            let c = T.compare t2 u2 in
+            let c = T.compare t1 t2 in
             if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim3_1 _, _) -> -1
-    | (_, Zipper_prim3_1 _) -> 1
-    | (Zipper_prim3_2 (p1, t1, t2, z1), Zipper_prim3_2 (p2, u1, u2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = T.compare t1 u1 in
+      | (Zipper_prim2_1 _, _) -> -1
+      | (_, Zipper_prim2_1 _) -> 1
+      | (Zipper_prim3_0 (p1, t1, t2, z1), Zipper_prim3_0 (p2, u1, u2, z2)) ->
+          let c = P.compare p1 p2 in
           if c <> 0 then c
           else
-            let c = T.compare t2 u2 in
-            if c <> 0 then c else compare_zip z1 z2
-    | (Zipper_prim3_2 _, _) -> -1
-    | (_, Zipper_prim3_2 _) -> 1
-    | (Zipper_prim (p1, l1, r1, z1), Zipper_prim (p2, l2, r2, z2)) ->
-        let c = P.compare p1 p2 in
-        if c <> 0 then c
-        else
-          let c = term_array_compare l1 l2 in
+            let c = T.compare t1 u1 in
+            if c <> 0 then c
+            else
+              let c = T.compare t2 u2 in
+              if c <> 0 then c else compare_zip z1 z2
+      | (Zipper_prim3_0 _, _) -> -1
+      | (_, Zipper_prim3_0 _) -> 1
+      | (Zipper_prim3_1 (p1, t1, t2, z1), Zipper_prim3_1 (p2, u1, u2, z2)) ->
+          let c = P.compare p1 p2 in
           if c <> 0 then c
           else
-            let c = term_array_compare r1 r2 in
-            if c <> 0 then c else compare_zip z1 z2
+            let c = T.compare t1 u1 in
+            if c <> 0 then c
+            else
+              let c = T.compare t2 u2 in
+              if c <> 0 then c else compare_zip z1 z2
+      | (Zipper_prim3_1 _, _) -> -1
+      | (_, Zipper_prim3_1 _) -> 1
+      | (Zipper_prim3_2 (p1, t1, t2, z1), Zipper_prim3_2 (p2, u1, u2, z2)) ->
+          let c = P.compare p1 p2 in
+          if c <> 0 then c
+          else
+            let c = T.compare t1 u1 in
+            if c <> 0 then c
+            else
+              let c = T.compare t2 u2 in
+              if c <> 0 then c else compare_zip z1 z2
+      | (Zipper_prim3_2 _, _) -> -1
+      | (_, Zipper_prim3_2 _) -> 1
+      | (Zipper_prim (p1, l1, r1, z1), Zipper_prim (p2, l2, r2, z2)) ->
+          let c = P.compare p1 p2 in
+          if c <> 0 then c
+          else
+            let c = term_array_compare l1 l2 in
+            if c <> 0 then c
+            else
+              let c = term_array_compare r1 r2 in
+              if c <> 0 then c else compare_zip z1 z2
 
   and term_array_compare (t1 : T.t array) (t2 : T.t array) =
     let len1 = Array.length t1 in

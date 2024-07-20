@@ -110,7 +110,6 @@ let test_zip_unzip =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  Format.printf "%a, %a@." Term.pp t Path.pp p ;
   let zip = guide_zip (Path.reverse p) (Z.of_term t) in
   let unzip = Z.to_term zip in
   if Term.equal t unzip then true
@@ -132,7 +131,6 @@ let test_zip_move_up =
       term_gen >>= fun t ->
       path t >>= fun p -> return (t, p))
   @@ fun (t, p) ->
-  Format.printf "%a, %a@." Term.pp t Path.pp p ;
   let zip = guide_zip (Path.reverse p) (Z.of_term t) in
   let unzip =
     let rec fixp zip =
@@ -151,7 +149,55 @@ let test_zip_move_up =
       Path.pp
       p
 
+let test_zip_compare_eq =
+  QCheck2.Test.make
+    ~count:1000
+    ~name:"zip_compare_eq"
+    Gen.(
+      term_gen >>= fun t ->
+      path t >>= fun p -> return (t, p))
+  @@ fun (t, p) ->
+  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  if Z.compare zip zip = 0 then true
+  else
+    QCheck2.Test.fail_reportf
+      "compare zip zip =/= 0\nterm = %a\npath = %a"
+      Term.pp
+      t
+      Path.pp
+      p
+
+let test_zip_eq =
+  QCheck2.Test.make
+    ~count:1000
+    ~name:"zip_eq"
+    Gen.(
+      term_gen >>= fun t ->
+      path t >>= fun p -> return (t, p))
+  @@ fun (t, p) ->
+  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  let zip' = guide_zip (Path.reverse p) (Z.of_term t) in
+  if Z.equal zip zip' then true
+  else
+    QCheck2.Test.fail_reportf
+      "eq zip zip =/= true\nterm = %a\npath = %a"
+      Term.pp
+      t
+      Path.pp
+      p
+
+let test_zip_hash =
+  Alcotest.test_case "zip_hash" `Quick @@ fun () ->
+  let t = Gen.generate1 term_gen in
+  let p = Gen.generate1 (path t) in
+  let zip = guide_zip (Path.reverse p) (Z.of_term t) in
+  ignore (Z.hash zip)
+
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
 let () =
-  Alcotest.run "path" [("zip_unzip", conv [test_zip_unzip; test_zip_move_up])]
+  Alcotest.run
+    "path"
+    [ ("zip_unzip", conv [test_zip_unzip; test_zip_move_up]);
+      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq]);
+      ("zip_hash", [test_zip_hash]) ]
