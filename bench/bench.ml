@@ -55,6 +55,17 @@ let float f = prim (Prim.Float f) [||]
 
 let var s = var s
 
+(* ---------------------------------------------------------------- *)
+
+let timeit f =
+  let t0 = Unix.gettimeofday () in
+  f () ;
+  let t1 = Unix.gettimeofday () in
+  t1 -. t0
+[@@ocaml.inline]
+
+(* ---------------------------------------------------------------- *)
+
 let rec iter_exhaustive depth k =
   if depth = 0 then k (float 0.0)
   else
@@ -65,13 +76,6 @@ let rec iter_exhaustive depth k =
     (* k (sub l r) ; *)
     (* k (mul l r) ; *)
     k (div l r)
-
-let timeit f =
-  let t0 = Unix.gettimeofday () in
-  f () ;
-  let t1 = Unix.gettimeofday () in
-  t1 -. t0
-[@@ocaml.inline]
 
 let () =
   let index = Index.create () in
