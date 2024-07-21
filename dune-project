@@ -1,6 +1,6 @@
 (lang dune 3.0)
 (name term-indexing)
-(version 0.0.1)
+(version 0.0.2)
 (generate_opam_files true)
 (source (uri git+https://github.com/igarnier/term-indexing))
 (bug_reports http://github.com/igarnier/term-indexing)
