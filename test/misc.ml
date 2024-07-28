@@ -129,8 +129,8 @@ module Stub () = struct
       (fun zipper acc ->
         let path = Zipper.path zipper in
         (path, Zipper.to_term (Zipper.replace (var 0) zipper)) :: acc)
-      []
       (Zipper.of_term term)
+      []
 
   let index = I.create ()
 

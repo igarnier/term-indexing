@@ -186,10 +186,10 @@ let test_zip_set =
   QCheck2.Test.make ~count:1000 ~name:"zip_set" term_gen @@ fun t ->
   let module ZS = Set.Make (Zipper) in
   let zipper_set =
-    Z.fold (fun zip acc -> ZS.add zip acc) ZS.empty (Z.of_term t)
+    Z.fold (fun zip acc -> ZS.add zip acc) (Z.of_term t) ZS.empty
   in
   let card = ZS.cardinal zipper_set in
-  let node_count = Term.fold (fun _ acc -> acc + 1) 0 t in
+  let node_count = Term.fold (fun _ acc -> acc + 1) t 0 in
   if Int.equal card node_count then true
   else
     QCheck2.Test.fail_reportf

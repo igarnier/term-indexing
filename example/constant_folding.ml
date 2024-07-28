@@ -50,12 +50,12 @@ let rewritten = Zipper.replace (float 42.0) right |> Zipper.to_term
 let () = Fmt.pr "rewritten: %a@." Term.pp rewritten
 
 let all_subterms =
-  Zipper.fold (fun z acc -> Zipper.cursor z :: acc) [] (Zipper.of_term t)
+  Zipper.fold (fun z acc -> Zipper.cursor z :: acc) (Zipper.of_term t) []
 
 let () = Fmt.pr "%a@." (Fmt.Dump.list Term.pp) all_subterms
 
 let all_variables =
-  Zipper.fold_variables (fun v _z acc -> v :: acc) [] (Zipper.of_term t)
+  Zipper.fold_variables (fun v _z acc -> v :: acc) (Zipper.of_term t) []
 
 let () = Fmt.pr "%a@." Fmt.Dump.(list Fmt.int) all_variables
 

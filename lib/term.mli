@@ -9,7 +9,7 @@ and 'prim desc = private
           contained in [ts]. *)
   | Var of int  (** [Var v] is a variable equal to [v]. *)
 
-val fold : ('a term -> 'b -> 'b) -> 'b -> 'a term -> 'b
+val fold : ('a term -> 'b -> 'b) -> 'a term -> 'b -> 'b
 
 exception Get_subterm_oob of int list * int
 

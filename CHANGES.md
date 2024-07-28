@@ -4,6 +4,7 @@
 - add `Zipper` module
 - add `Susbt.Unification.unfold`
 - remove `Path` module, use `Zipper` instead where possible
+- normalize `fold` signatures
 - comment fixes
 
 ## 0.0.1

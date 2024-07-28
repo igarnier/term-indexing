@@ -231,32 +231,32 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
 
   let to_term (term, zip) = unzip term zip
 
-  let rec fold f acc zipper =
+  let rec fold f zipper acc =
     let acc = f zipper acc in
     T.destruct
-      (fun _ subterms -> fold_subterms f acc subterms zipper 0)
+      (fun _ subterms -> fold_subterms f subterms zipper acc 0)
       (fun _ -> acc)
       (cursor zipper)
 
-  and fold_subterms f acc subterms zipper i =
+  and fold_subterms f subterms zipper acc i =
     if i = Array.length subterms then acc
     else
-      let acc = fold f acc (move_at_exn zipper i) in
-      fold_subterms f acc subterms zipper (i + 1)
+      let acc = fold f (move_at_exn zipper i) acc in
+      fold_subterms f subterms zipper acc (i + 1)
 
-  let rec fold_variables f acc zipper =
+  let rec fold_variables f zipper acc =
     let term = cursor zipper in
     T.destruct
       (fun _ subterms ->
         let ub = T.ub term in
         if Int_option.is_none ub then acc
-        else fold_variables_subterms f acc subterms zipper 0)
+        else fold_variables_subterms f subterms zipper acc 0)
       (fun v -> f v zipper acc)
       term
 
-  and fold_variables_subterms f acc subterms zipper i =
+  and fold_variables_subterms f subterms zipper acc i =
     if i = Array.length subterms then acc
     else
-      let acc = fold_variables f acc (move_at_exn zipper i) in
-      fold_variables_subterms f acc subterms zipper (i + 1)
+      let acc = fold_variables f (move_at_exn zipper i) acc in
+      fold_variables_subterms f subterms zipper acc (i + 1)
 end

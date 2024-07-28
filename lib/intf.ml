@@ -192,7 +192,7 @@ module type Term_core = sig
   val get_subterm : t -> int list -> t
 
   (** [fold f acc t] folds [f] over the subterms of [t] *)
-  val fold : (t -> 'b -> 'b) -> 'b -> t -> 'b
+  val fold : (t -> 'b -> 'b) -> t -> 'b -> 'b
 end
 
 (** The module type of first-order terms *)
@@ -223,7 +223,7 @@ module type Term = sig
   val subst : term:t -> path:int list -> (t -> t) -> t
 
   (** [fold_variables f acc t] folds [f] over the variables of [t] *)
-  val fold_variables : (var -> 'b -> 'b) -> 'b -> t -> 'b
+  val fold_variables : (var -> 'b -> 'b) -> t -> 'b -> 'b
 
   (** [canon t gen] canonicalizes the term [t] using the variable generator [gen].
       Returns the canonicalized term as well as a map from old to canonicalized variables. *)
@@ -494,10 +494,10 @@ module type Zipper = sig
   val replace : term -> t -> t
 
   (** [fold f acc z] folds a zipper over the subterms of [cursor z] (including [cursor z]). *)
-  val fold : (t -> 'a -> 'a) -> 'a -> t -> 'a
+  val fold : (t -> 'a -> 'a) -> t -> 'a -> 'a
 
   type var := int
 
   (** [fold_variables f acc z] folds a zipper over the subterms of [cursor z] which are variables. *)
-  val fold_variables : (var -> t -> 'a -> 'a) -> 'a -> t -> 'a
+  val fold_variables : (var -> t -> 'a -> 'a) -> t -> 'a -> 'a
 end

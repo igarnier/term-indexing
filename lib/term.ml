@@ -43,19 +43,19 @@ let rec pp_sexp pp_prim fmtr term =
 
 (* Fold over the term.
    TODO: make tail-recursive if needed. *)
-let rec fold f acc term =
+let rec fold f term acc =
   let acc = f term acc in
   match term.Hashcons.node with
   | Var _ -> acc
-  | Prim (_, subterms, _) -> fold_subterms f acc subterms 0
+  | Prim (_, subterms, _) -> fold_subterms f subterms acc 0
 
-and fold_subterms f acc subterms i =
+and fold_subterms f subterms acc i =
   if i = Array.length subterms then acc
   else
-    let acc = fold f acc subterms.(i) in
-    fold_subterms f acc subterms (i + 1)
+    let acc = fold f subterms.(i) acc in
+    fold_subterms f subterms acc (i + 1)
 
-let fold f acc term = fold f acc term
+let fold f term acc = fold f term acc
 
 exception Get_subterm_oob of int list * int
 
@@ -164,18 +164,18 @@ module Make_hash_consed
   (* re-export generic fold *)
   let fold = fold
 
-  let rec fold_variables f acc term =
+  let rec fold_variables f term acc =
     match term.Hashcons.node with
     | Var v -> f v acc
     | Prim (_, subterms, ub) ->
         if Int_option.is_none ub then acc
-        else fold_variables_subterms f acc subterms 0
+        else fold_variables_subterms f subterms acc 0
 
-  and fold_variables_subterms f acc subterms i =
+  and fold_variables_subterms f subterms acc i =
     if i = Array.length subterms then acc
     else
-      let acc = fold_variables f acc subterms.(i) in
-      fold_variables_subterms f acc subterms (i + 1)
+      let acc = fold_variables f subterms.(i) acc in
+      fold_variables_subterms f subterms acc (i + 1)
 
   let fold_variables f acc term = fold_variables f acc term
 
@@ -214,8 +214,8 @@ module Make_hash_consed
               let canon_v = enum () in
               M.add v canon_v canon_map
           | Some _ -> canon_map)
-        (M.empty ())
         term
+        (M.empty ())
     in
     let result =
       map_variables

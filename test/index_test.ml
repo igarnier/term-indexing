@@ -114,8 +114,8 @@ struct
       Zipper.fold
         (fun zipper acc ->
           (Zipper.path zipper, Zipper.(to_term (replace (var 0) zipper))) :: acc)
-        []
         (Zipper.of_term term)
+        []
 
     let index_query_generalize =
       Alcotest.test_case (named "index-query-generalize") `Quick (fun () ->
