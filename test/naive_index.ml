@@ -4,7 +4,8 @@ open Term_indexing
 module Make
     (P : Intf.Signature)
     (T : Intf.Term with type prim = P.t)
-    (S : Intf.Subst with type term = T.t) =
+    (S : Intf.Subst with type term = T.t)
+    (U : Intf.Unification with type term = T.t and type subst = S.t) =
 struct
   type term = T.t
 
@@ -29,19 +30,19 @@ struct
   let iter_pred f index pred = M.iter (fun t v -> if pred t then f t v) !index
 
   let iter_unifiable f index query =
-    let open S.Unification in
+    let open U in
     M.iter
       (fun t v ->
         match unify query t (empty ()) with None -> () | Some _ -> f t v)
       !index
 
   let iter_generalize f index query =
-    let open S.Unification in
-    M.iter (fun t v -> if generalize t query then f t v else ()) !index
+    let open U in
+    M.iter (fun t v -> if generalizes t query then f t v else ()) !index
 
   let iter_specialize f index query =
-    let open S.Unification in
-    M.iter (fun t v -> if generalize query t then f t v else ()) !index
+    let open U in
+    M.iter (fun t v -> if generalizes query t then f t v else ()) !index
 
   let pp pp_elt : 'a t Fmt.t =
    fun fmtr index ->

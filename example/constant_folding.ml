@@ -132,17 +132,17 @@ let () = Fmt.pr "%a@." Term.pp substituted
 
 (* Example: unification *)
 
-let uf_state = Subst.Unification.empty ()
+let uf_state = Unification.empty ()
 
 let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
 
 let t2 = add (var 2) (mul (float 3.0) (float 4.0))
 
 let () =
-  match Subst.Unification.unify t1 t2 uf_state with
+  match Unification.unify t1 t2 uf_state with
   | None -> failwith "unification failed"
   | Some uf_state' ->
-      let subst = Subst.Unification.subst uf_state' in
+      let subst = Unification.subst uf_state' in
       Fmt.pr "%a@." Subst.pp subst
 
 let () = Fmt.pr "%a@." Subst.pp subst

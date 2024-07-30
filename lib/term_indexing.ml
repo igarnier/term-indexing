@@ -12,6 +12,7 @@ module Make_internal (P : Intf.Signature) = struct
   module Zipper = Zipper.Make (P) (Term)
   module Pattern = Pattern.Make (P) (Term) (Zipper)
   module Subst = Subst.Make (P) (Default_map) (Term)
+  module Unification = Unification.Make (P) (Term) (Subst)
   module Index = Term_index.Make (P) (Term) (Subst)
 end
 
@@ -31,8 +32,12 @@ module Make (P : Intf.Signature) : sig
        and type term = Term.t
        and type zipper = Zipper.t
 
-  (** Substitutions. *)
+  (** Handling substitutions. *)
   module Subst : Intf.Subst with type term = Term.t
+
+  (** Solving unification problems on first-order terms. *)
+  module Unification :
+    Intf.Unification with type term = Term.t and type subst = Subst.t
 
   (** Term indexing. *)
   module Index :

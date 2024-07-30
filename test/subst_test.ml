@@ -45,7 +45,7 @@ module Subst_tests = struct
 end
 
 module Unification = struct
-  module U = Subst.Unification
+  module U = Unification
 
   let unify t0 t1 =
     let state = U.empty () in
@@ -185,17 +185,17 @@ module Unification = struct
       ~count:100
       (Arith.term_gen (fun _ -> None))
       (fun term ->
-        ignore (U.generalize term term) ;
+        ignore (U.generalizes term term) ;
         true)
     |> QCheck_alcotest.to_alcotest
 
   let generalize t1 t2 =
-    if U.generalize t1 t2 then ()
+    if U.generalizes t1 t2 then ()
     else
       QCheck.Test.fail_reportf "expected success: %a, %a" Term.pp t1 Term.pp t2
 
   let generalize_fail t1 t2 =
-    if not (U.generalize t1 t2) then ()
+    if not (U.generalizes t1 t2) then ()
     else
       QCheck.Test.fail_reportf "expected failure: %a, %a" Term.pp t1 Term.pp t2
 

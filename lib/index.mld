@@ -312,13 +312,13 @@ The library provides a module to compute such solutions. Unification proceeds on
 that allows to accumulate equations. Let us create an empty state.
 
 {[
-let uf_state = Subst.Unification.empty ()
+let uf_state = Unification.empty ()
 ]}
 
-One can unify terms using {{!Term_indexing.Intf.Subst.Unification.unify}[Subst.Unification.unify]}.
+One can unify terms using {{!Term_indexing.Intf.Unification.unify}[Unification.unify]}.
 This function returns [None] when no unifier can be found, or an updated state in the other case.
 At any point, we can get a solution from the state using
-{{!Term_indexing.Intf.Subst.Unification.subst}[Subst.Unification.subst]} which returns a substitution.
+{{!Term_indexing.Intf.Unification.subst}[Unification.subst]} which returns a substitution.
 
 {[
 let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
@@ -326,10 +326,10 @@ let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
 let t2 = add (var 2) (mul (float 3.0) (float 4.0))
 
 let () =
-  match Subst.Unification.unify t1 t2 uf_state with
+  match Unification.unify t1 t2 uf_state with
   | None -> failwith "unification failed"
   | Some uf_state' ->
-      let subst = Subst.Unification.subst uf_state' in
+      let subst = Unification.subst uf_state' in
       Fmt.pr "%a@." Subst.pp subst
 ]}
 

@@ -290,50 +290,56 @@ module type Subst = sig
 
       Raises [Invalid_argument] if [s1] and [s2] have overlapping domains. *)
   val union : t -> t -> t
+end
 
-  (** [Unification] contains facilities to perform first-order term unification *)
-  module Unification : sig
-    (** [state] is the type of unification state. *)
-    type state
+(** [Unification] contains facilities to perform first-order term unification *)
+module type Unification = sig
+  (** The type of terms *)
+  type term
 
-    (** [Cannot_unify] is raised by {!unify} when a unifier cannot be found. *)
-    exception Cannot_unify
+  (** The type of substitutions *)
+  type subst
 
-    (** [empty ()] is an empty unification state. *)
-    val empty : unit -> state
+  (** [state] is the type of unification state. *)
+  type state
 
-    (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
+  (** [Cannot_unify] is raised by {!unify} when a unifier cannot be found. *)
+  exception Cannot_unify
+
+  (** [empty ()] is an empty unification state. *)
+  val empty : unit -> state
+
+  (** [unify t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
         an updated {!state}. *)
-    val unify : term -> term -> state -> state option
+  val unify : term -> term -> state -> state option
 
-    (** [unify_exn t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
+  (** [unify_exn t1 t2 state] unifies terms [t1] and [t2] in state [state] and returns
         an updated {!state}.
 
         Raises [Cannot_unify] if no solution was found. *)
-    val unify_exn : term -> term -> state -> state
+  val unify_exn : term -> term -> state -> state
 
-    (** [unify_subst s state] unifies [s] with substitution state [state]
+  (** [unify_subst s state] unifies [s] with substitution state [state]
         and returns an updated {!state}. *)
-    val unify_subst : t -> state -> state option
+  val unify_subst : subst -> state -> state option
 
-    (** [unify_subst s1 s2 state] unifies [s1] with [s2] in state [state]
+  (** [unify_subst s1 s2 state] unifies [s1] with [s2] in state [state]
         and returns an updated {!state}. *)
-    val unify_subst_exn : t -> state -> state
+  val unify_subst_exn : subst -> state -> state
 
-    (** [generalize t1 t2] checks that there exists a substitution [subst]
+  (** [generalizes t1 t2] checks that there exists a substitution [subst]
         such that [lift t1 subst = t2]. *)
-    val generalize : term -> term -> bool
+  val generalizes : term -> term -> bool
 
-    (** [subst state] returns the substitution underlying the unification state. *)
-    val subst : state -> t
+  (** [subst state] returns the substitution underlying the unification state. *)
+  val subst : state -> subst
 
-    (** [Occurs_check] is raised by {!unfold} when the solution contains a cycle. *)
-    exception Occurs_check
+  (** [Occurs_check] is raised by {!unfold} when the solution contains a cycle. *)
+  exception Occurs_check
 
-    (** [unfold state term] returns [term] with variables substituted for their representative terms.
+  (** [unfold state term] returns [term] with variables substituted for their representative terms.
         Raises [Occurs_check] if the solution contains a cycle. *)
-    val unfold : state -> term -> term
-  end
+  val unfold : state -> term -> term
 end
 
 module type Term_index = sig

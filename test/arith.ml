@@ -64,7 +64,7 @@ module type Index_signature = sig
   end
 end
 
-module Reference = Naive_index.Make (Prim) (Term) (Subst)
+module Reference = Naive_index.Make (Prim) (Term) (Subst) (Unification)
 
 let add x y = Term.prim Add [| x; y |]
 
