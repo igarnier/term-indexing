@@ -181,8 +181,9 @@ module Make_hash_consed
 
   let rec map_variables f term =
     match term.Hashcons.node with
-    | Prim (p, subterms, _) ->
-        prim p (Array.map (fun t -> map_variables f t) subterms)
+    | Prim (p, subterms, ub) ->
+        if Int_option.is_none ub then term
+        else prim p (Array.map (fun t -> map_variables f t) subterms)
     | Var v -> f v
 
   (* re-export generic get_subterm *)
