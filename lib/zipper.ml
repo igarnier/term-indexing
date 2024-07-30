@@ -1,4 +1,4 @@
-module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
+module Make (P : Intf.Signature) (T : Intf.Term_core with type prim = P.t) :
   Intf.Zipper with type term = T.t = struct
   type term = T.t
 
@@ -248,8 +248,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
     let term = cursor zipper in
     T.destruct
       (fun _ subterms ->
-        let ub = T.ub term in
-        if Int_option.is_none ub then acc
+        if T.is_ground term then acc
         else fold_variables_subterms f subterms zipper acc 0)
       (fun v -> f v zipper acc)
       term

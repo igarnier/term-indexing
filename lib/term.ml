@@ -146,6 +146,8 @@ module Make_hash_consed
   let is_var term =
     match term.Hashcons.node with Var v -> Some v | Prim (_, _, _) -> None
 
+  let is_ground term = Int_option.is_none (ub term)
+
   let destruct fprim fvar term =
     match term.Hashcons.node with
     | Prim (p, subterms, _) -> fprim p subterms

@@ -154,6 +154,8 @@ module type Term_core = sig
 
   type var := int
 
+  include Hashed with type t := t
+
   (** Pretty-printing of terms. *)
   val pp : Format.formatter -> t -> unit
 
@@ -184,6 +186,9 @@ module type Term_core = sig
   (** [is_var t] is equal to [var v] if [equal t (var v)] or [None] if it is not the case *)
   val is_var : t -> var option
 
+  (** [is_ground t] is true if and only if [t] does not contain any variable. *)
+  val is_ground : t -> bool
+
   (** [get_subterm t fpth] is the subterm of [t] at position defined by the forward path
       [fpth].
 
@@ -201,8 +206,6 @@ module type Term = sig
 
   (** The type of polymorphic maps indexed by variables *)
   type 'a var_map
-
-  include Hashed with type t := t
 
   type var := int
 

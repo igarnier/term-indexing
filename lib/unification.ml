@@ -1,6 +1,6 @@
 module Make
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t)
+    (T : Intf.Term_core with type prim = P.t)
     (S : Intf.Subst with type term = T.t) :
   Intf.Unification with type term = T.t and type subst = S.t = struct
   type term = T.t
@@ -92,11 +92,7 @@ module Make
       generalizes t1 t2 table
       && generalize_subterms subterms1 subterms2 table (i + 1)
 
-  let generalizes term1 term2 =
-    let ub =
-      Int_option.elim (Int_option.max (T.ub term1) (T.ub term2)) 0 Fun.id
-    in
-    generalizes term1 term2 (Hashtbl.create (2 * ub))
+  let generalizes term1 term2 = generalizes term1 term2 (Hashtbl.create 11)
 
   let unify_subst_exn (subst : subst) (state : state) =
     Seq.fold_left
@@ -120,7 +116,7 @@ module Make
       T.destruct
         (fun prim subterms ->
           (* Optimization: if the term is ground then no need to recurse. *)
-          if Int_option.is_none (T.ub term) then term
+          if T.is_ground term then term
           else T.prim prim (Array.map (loop visited state) subterms))
         (fun v ->
           let repr = Uf.Map_based.find state.uf v in
