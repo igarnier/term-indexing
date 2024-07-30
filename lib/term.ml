@@ -235,6 +235,7 @@ module Make_hash_consed
 
   let uid term = term.Hashcons.tag
 end
+[@@ocaml.inline]
 
 module Default_map : Intf.Map with type key = int = struct
   include Int_map
