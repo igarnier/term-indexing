@@ -63,7 +63,7 @@ and get_focus_list : type f. ('p, f) pattern_list -> f focus_tag =
 
 module Make_raw
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+    (T : Intf.Term_core with type prim = P.t and type t = P.t Term.term)
     (Z : Intf.Zipper with type term = T.t) =
 struct
   type prim = P.t
@@ -284,7 +284,7 @@ end
 
 module Make : functor
   (P : Intf.Signature)
-  (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+  (T : Intf.Term_core with type prim = P.t and type t = P.t Term.term)
   (Z : Intf.Zipper with type term = T.t)
   ->
   Intf.Pattern
@@ -295,7 +295,7 @@ module Make : functor
 
 module Make_with_hash_consing
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
+    (T : Intf.Term_core with type prim = P.t and type t = P.t Term.term)
     (Z : Intf.Zipper with type term = T.t) : sig
   include
     Intf.Pattern

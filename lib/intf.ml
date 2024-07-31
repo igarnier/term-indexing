@@ -295,7 +295,7 @@ module type Subst = sig
   val union : t -> t -> t
 end
 
-(** [Unification] contains facilities to perform first-order term unification *)
+(** [Unification] contains facilities to solve unification problems on first-order terms *)
 module type Unification = sig
   (** The type of terms *)
   type term
