@@ -174,8 +174,9 @@ module Make (P : Intf.Signature) (T : Intf.Term_core with type prim = P.t) :
         let arity = Array.length subterms in
         if arity = 0 then invalid_arg "move_at_exn"
         else
+          (* OPTIM: could use unsafe_get *)
           match (arity, i) with
-          | (1, _) -> (subterms.(0), Zipper_prim1 (prim, zip))
+          | (1, 0) -> (subterms.(0), Zipper_prim1 (prim, zip))
           | (2, 0) -> (subterms.(0), Zipper_prim2_0 (prim, subterms.(1), zip))
           | (2, 1) -> (subterms.(1), Zipper_prim2_1 (prim, subterms.(0), zip))
           | (3, 0) ->
