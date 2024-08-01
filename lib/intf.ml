@@ -263,10 +263,6 @@ module type Subst = sig
 
   val equal : t -> t -> bool
 
-  (** [ub subst] is an upper bound on the absolute value of variables appearing in [subst]
-      (either in the domain or the range of the substitution). *)
-  val ub : t -> Int_option.t
-
   (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
       or [None] if [v] is not in the domain of [subst]. *)
   val eval : var -> t -> term option

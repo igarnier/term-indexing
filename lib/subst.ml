@@ -3,7 +3,7 @@ module Vec = Containers.Vector
 module Make
     (P : Intf.Signature)
     (M : Intf.Map with type key = int)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term) :
+    (T : Intf.Term_core with type prim = P.t) :
   Intf.Subst with type term = T.t = struct
   type term = T.t
 
@@ -27,21 +27,16 @@ module Make
 
   let equal s1 s2 = M.equal T.equal s1 s2
 
-  let ub subst =
-    Seq.fold_left
-      (fun acc (v, t) -> Int_option.(max (of_int (abs v)) (max (T.ub t) acc)))
-      Int_option.none
-      (to_seq subst)
-
   let eval = M.find_opt
 
   let eval_exn v subst =
     match M.find_opt v subst with None -> raise Not_found | Some t -> t
 
   let add k term subst =
-    (match term.Hashcons.node with
-    | Term.Var v' -> if Int.equal k v' then invalid_arg "add"
-    | _ -> ()) ;
+    T.destruct
+      (fun _prim _subterms -> ())
+      (fun v' -> if Int.equal k v' then invalid_arg "add")
+      term ;
     M.add k term subst
 
   let unsafe_add k term subst = M.add k term subst
@@ -50,13 +45,14 @@ module Make
 
   (* /!\ no occur check, the substitution should be well-founded or this will stack overflow *)
   let rec lift subst (term : term) =
-    match term.Hashcons.node with
-    | Prim (prim, subterms, ub) ->
-        (* Optimization: if the term is ground then no need to recurse. *)
-        if Int_option.is_none ub then term
-        else T.prim prim (Array.map (lift subst) subterms)
-    | Var v -> (
+    T.destruct
+      (fun prim subterms ->
+        if T.is_ground term then term
+        else
+          T.prim prim (Array.map (fun subterm -> lift subst subterm) subterms))
+      (fun v ->
         match eval v subst with None -> term | Some term -> lift subst term)
+      term
 
   let union = M.union
 end
