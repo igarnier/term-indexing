@@ -17,7 +17,7 @@ module Make
 
   let get_repr var { subst; uf } =
     let repr_var = Uf.Map_based.find uf var in
-    let repr_term = S.eval repr_var subst in
+    let repr_term = S.get repr_var subst in
     (repr_term, repr_var)
 
   let rec unify_exn (term1 : term) (term2 : term) (state : state) =
@@ -120,7 +120,7 @@ module Make
           else T.prim prim (Array.map (loop visited state) subterms))
         (fun v ->
           let repr = Uf.Map_based.find state.uf v in
-          match S.eval repr state.subst with
+          match S.get repr state.subst with
           | None -> term
           | Some term ->
               if Int_set.mem repr visited then raise Occurs_check
@@ -131,3 +131,4 @@ module Make
     in
     loop Int_set.empty state term
 end
+[@@ocaml.inline]

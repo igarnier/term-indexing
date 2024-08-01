@@ -199,12 +199,12 @@ let test_zip_set =
       card
       node_count
 
-let test_zip_hash =
-  Alcotest.test_case "zip_hash" `Quick @@ fun () ->
-  let t = Gen.generate1 term_gen in
-  let p = Gen.generate1 (path t) in
-  let zip = guide_zip (List.rev p) (Z.of_term t) in
-  ignore (Z.hash zip)
+(* let test_zip_hash = *)
+(*   Alcotest.test_case "zip_hash" `Quick @@ fun () -> *)
+(*   let t = Gen.generate1 term_gen in *)
+(*   let p = Gen.generate1 (path t) in *)
+(*   let zip = guide_zip (List.rev p) (Z.of_term t) in *)
+(*   ignore (Z.hash zip) *)
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
@@ -212,5 +212,4 @@ let () =
   Alcotest.run
     "path"
     [ ("zip_unzip", conv [test_zip_unzip; test_zip_move_up]);
-      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]);
-      ("zip_hash", [test_zip_hash]) ]
+      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]) ]

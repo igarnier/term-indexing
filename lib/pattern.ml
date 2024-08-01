@@ -70,6 +70,8 @@ struct
 
   type zipper = Z.t
 
+  type 'a with_state = 'a Z.with_state
+
   type t = Ex_patt : (prim, 'f) pattern -> t [@@ocaml.unboxed]
 
   type matching = t list
@@ -151,7 +153,7 @@ struct
 
   exception Found of t * zipper
 
-  let first_match_aux matching zipper =
+  let first_match_aux matching zipper : (t * zipper) option =
     let rec loop : matching -> zipper -> unit =
      fun matching zipper ->
       let arity = arity zipper in
@@ -186,21 +188,21 @@ struct
     | None -> acc
     | Some patt -> (patt, zipper) :: acc
 
-  let refine_focused pattern zipper =
+  let refine_focused pattern zipper : zipper list =
     match pattern with
     | Ex_patt patt -> (
         match get_focus patt with
         | Unfocused_tag -> []
         | Focused_tag -> get_zippers_of_focuses patt zipper [])
 
-  let all_matches matching term =
+  let all_matches matching term : zipper list =
     all_matches_aux matching (Z.of_term term) []
     |> List.concat_map (fun ((Ex_patt patt as pattern), zipper) ->
            match get_focus patt with
            | Unfocused_tag -> [zipper]
            | Focused_tag -> refine_focused pattern zipper)
 
-  let first_match matching term =
+  let first_match matching term : zipper list =
     match first_match_aux matching (Z.of_term term) with
     | None -> []
     | Some ((Ex_patt patt as pattern), zipper) -> (
@@ -290,6 +292,7 @@ module Make : functor
   Intf.Pattern
     with type prim = P.t
      and type term = P.t Term.term
+     and type 'a with_state := 'a Z.with_state
      and type zipper = Z.t =
   Make_raw
 
@@ -301,9 +304,10 @@ module Make_with_hash_consing
     Intf.Pattern
       with type prim = P.t
        and type term = P.t Term.term
+       and type 'a with_state = 'a Z.with_state
        and type zipper = Z.t
 
-  val all_matches_with_hash_consing : t -> term -> zipper list
+  val all_matches_with_hash_consing : t -> term Z.with_state -> zipper list
 end = struct
   include Make_raw (P) (T) (Z)
 
@@ -329,16 +333,22 @@ end = struct
         if pattern_matches patt node then zipper :: acc else acc
     | Some res -> List.rev_append res acc
 
-  let all_matches_with_hash_consing pattern term =
+  let all_matches_with_hash_consing pattern term_with_state =
     match pattern with
     | Ex_patt patt -> (
         match get_focus patt with
-        | Unfocused_tag -> all_matches_aux pattern term (Z.of_term term) []
+        | Unfocused_tag ->
+            let z = Z.of_term term_with_state in
+            let term = Z.cursor z in
+            all_matches_aux pattern term z []
         | Focused_tag ->
-            let zippers = all_matches_aux pattern term (Z.of_term term) [] in
+            let z = Z.of_term term_with_state in
+            let term = Z.cursor z in
+            let zippers = all_matches_aux pattern term z [] in
             List.fold_left
               (fun acc context_zipper ->
                 get_zippers_of_focuses patt context_zipper acc)
               []
               zippers)
 end
+[@@ocaml.inline]

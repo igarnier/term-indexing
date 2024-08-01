@@ -68,6 +68,8 @@ module type Pattern = sig
   (** The type of primitives, i.e. the symbols. Each value of type [prim] has a definite arity. *)
   type prim
 
+  type 'a with_state
+
   (** The type of zippers over terms. *)
   type zipper
 
@@ -87,18 +89,18 @@ module type Pattern = sig
   val pattern_matches : t -> term -> bool
 
   (** [all_matches t matching] returns all zippers at which there is a subterm satisfying [matching] *)
-  val all_matches : matching -> term -> zipper list
+  val all_matches : matching -> term with_state -> zipper list
 
   (** [first_match t matching] returns the first zippers, if any, where there is a subterm satisfying [matching].
 
       If the matched pattern does not specify focused subterms, the result is at most a singleton list.
       If the matched pattern specifies focused subterms, the result is a list of zippers, one for each focused subterm.
- *)
-  val first_match : matching -> term -> zipper list
+   *)
+  val first_match : matching -> term with_state -> zipper list
 
   (** [refine_focused patt zippers] returns the refinements of [zippers] that correspond to focused subterms of [patt].
       If [patt] is does not specify focii, the result is the empty list.
- *)
+   *)
   val refine_focused : t -> zipper -> zipper list
 
   (** [prim p plist] is a pattern matching a term with head bearing a primitive [p] and subterms matching the list pattern [plist]. *)
@@ -237,6 +239,24 @@ module type Term = sig
   val uid : t -> int
 end
 
+(** The module type of read-only states *)
+module type Read_only = sig
+  (** The type of states *)
+  type t
+
+  type var := int
+
+  (** The type of values *)
+  type value
+
+  (** [get k state] returns [Some v] if the key [k] is associated to the value [v] in [state], or [None] otherwise. *)
+  val get : var -> t -> value option
+
+  (** [get_exn k state] returns the value associated to [k] in [state].
+      Raises [Not_found] if [k] is not in the domain of [state]. *)
+  val get_exn : var -> t -> value
+end
+
 (** The module type of substitutions *)
 module type Subst = sig
   (** The type of terms *)
@@ -246,6 +266,8 @@ module type Subst = sig
 
   (** The type of substitutions *)
   type t
+
+  include Read_only with type t := t and type value = term
 
   val of_seq : (var * term) Seq.t -> t
 
@@ -263,14 +285,6 @@ module type Subst = sig
 
   (** [equal s1 s2] checks equality of substitutions. *)
   val equal : t -> t -> bool
-
-  (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
-      or [None] if [v] is not in the domain of [subst]. *)
-  val eval : var -> t -> term option
-
-  (** Exception-raising variant of {!eval}.
-      Raises [Not_found] if [v] is not in the domain of [subst]. *)
-  val eval_exn : var -> t -> term
 
   (** [add v t subst] adds a mapping from [v] to [t] in [subst].
       If [v] is already in the domain of [subst], the previous mapping is replaced.
@@ -464,14 +478,13 @@ module type Zipper = sig
   (** The type of zippers. *)
   type t
 
+  type 'a with_state
+
   (** [compare] is a total order. *)
   val compare : t -> t -> int
 
   (** [equal z1 z2] tests whether [z1] and [z2] are equal. *)
   val equal : t -> t -> bool
-
-  (** [hash z] is a (non-cryptographically secure) hash of [z]. *)
-  val hash : t -> int
 
   (** [cursor z] is the term under focus of [z]. *)
   val cursor : t -> term
@@ -480,10 +493,10 @@ module type Zipper = sig
   val path : t -> int list
 
   (** [of_term t] is the zipper of the term [t]. *)
-  val of_term : term -> t
+  val of_term : term with_state -> t
 
   (** [to_term z] is the term represented by the zipper [z]. *)
-  val to_term : t -> term
+  val to_term : t -> term with_state
 
   (** [move_up z] is the zipper obtained by moving up in the zipper [z]. *)
   val move_up : t -> t option

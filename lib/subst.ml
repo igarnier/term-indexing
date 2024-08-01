@@ -9,6 +9,8 @@ module Make
 
   type t = T.t M.t
 
+  type value = term
+
   let empty = M.empty
 
   let is_empty = M.is_empty
@@ -27,9 +29,9 @@ module Make
 
   let equal s1 s2 = M.equal T.equal s1 s2
 
-  let eval = M.find_opt
+  let get = M.find_opt
 
-  let eval_exn v subst =
+  let get_exn v subst =
     match M.find_opt v subst with None -> raise Not_found | Some t -> t
 
   let add k term subst =
@@ -51,8 +53,9 @@ module Make
         else
           T.prim prim (Array.map (fun subterm -> lift subst subterm) subterms))
       (fun v ->
-        match eval v subst with None -> term | Some term -> lift subst term)
+        match get v subst with None -> term | Some term -> lift subst term)
       term
 
   let union = M.union
 end
+[@@ocaml.inline]

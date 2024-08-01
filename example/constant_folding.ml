@@ -45,7 +45,7 @@ let right = Zipper.move_at zipper 1 |> Option.get
 
 let () = Fmt.pr "right: %a@." Term.pp (Zipper.cursor right)
 
-let rewritten = Zipper.replace (float 42.0) right |> Zipper.to_term
+let rewritten = Zipper.to_term (Zipper.replace (float 42.0) right)
 
 let () = Fmt.pr "rewritten: %a@." Term.pp rewritten
 
@@ -119,10 +119,9 @@ let subst =
   [(0, float 0.0); (1, neg (float 42.0)); (2, float 2.0)]
   |> List.to_seq |> Subst.of_seq
 
-let () =
-  assert (Option.equal Term.equal (Subst.eval 0 subst) (Some (float 0.0)))
+let () = assert (Option.equal Term.equal (Subst.get 0 subst) (Some (float 0.0)))
 
-let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)
+let () = assert (Option.equal Term.equal (Subst.get 3 subst) None)
 
 let term = add (var 1) (mul (var 2) (var 2))
 

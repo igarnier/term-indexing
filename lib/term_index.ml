@@ -220,7 +220,7 @@ end = struct
             match !repr with
             | IVar | EVar -> subst
             | Prim _ | Var _ ->
-                if S.eval v subst |> Option.is_some then subst
+                if S.get v subst |> Option.is_some then subst
                 else S.add v (to_term repr) subst)
         | Prim (_, subtrees) -> Array.fold_left loop subst subtrees
         | IVar -> subst
