@@ -261,6 +261,7 @@ module type Subst = sig
   (** [is_empty subst] checks whether [equal subst empty] *)
   val is_empty : t -> bool
 
+  (** [equal s1 s2] checks equality of substitutions. *)
   val equal : t -> t -> bool
 
   (** [eval v subst] returns [Some t] if [v] is mapped to the term [t] in [subst]
