@@ -461,12 +461,21 @@ end
 
 (** The module type of zippers. *)
 module type Zipper = sig
+  (** This module implements zippers over first-order terms.
+
+      For advanced users: as an extension over plain zippers, the module also allows to edit a term lazily applied
+      to a substitution. In plain words, the variables contained in terms may point to other terms, specified
+      by a substitution provided at zipper creation time. One can then navigate and edit the induced graph in a
+      purely applicative fashion. *)
+
   (** The type of terms. *)
   type term
 
   (** The type of zippers. *)
   type t
 
+  (** For plain zippers, ['a with_state = 'a]. When doing term graph edition, this type encapsulates the underlying
+      substitution. *)
   type 'a with_state
 
   (** [compare] is a total order. *)
@@ -490,10 +499,19 @@ module type Zipper = sig
   (** [move_up z] is the zipper obtained by moving up in the zipper [z]. *)
   val move_up : t -> t option
 
-  (** [deref t] *)
+  (** For experienced users only. [deref z] is
+      {ul
+      {- [None] when [cursor z] is not a variable}
+      {- If [cursor z] is a variable [k] and [k] is not bound in the underlying substitution, [deref z] is also [None] }
+      {- Otherwise, [deref z] is [Some z'] where [z'] is a zipper located at the term associated to [k]. } }
+  *)
   val deref : t -> t option
 
-  (** [move_at z i] is the zipper obtained by moving at the index [i]. *)
+  (** [move_at z i] is the zipper obtained by moving at the index [i].
+
+      For experienced users/experimental: when doing term graph edition, in the case where [cursor z] is a variable
+      in the domain of the underlying substitution, [move_at z i] will silently perform a {!deref}
+      before moving at the index [i] of the obtained term. *)
   val move_at : t -> int -> t option
 
   (** [move_at_exn z i] is the exception-raising vaeriant of {!move_at}.
