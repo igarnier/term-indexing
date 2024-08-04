@@ -490,6 +490,9 @@ module type Zipper = sig
   (** [move_up z] is the zipper obtained by moving up in the zipper [z]. *)
   val move_up : t -> t option
 
+  (** [deref t] *)
+  val deref : t -> t option
+
   (** [move_at z i] is the zipper obtained by moving at the index [i]. *)
   val move_at : t -> int -> t option
 

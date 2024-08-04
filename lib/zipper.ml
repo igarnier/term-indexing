@@ -206,6 +206,18 @@ struct
 
   let replace term z = make term (ctxt z) (state z)
 
+  let deref z =
+    T.destruct
+      (fun _ _ -> None)
+      (fun v ->
+        let state = state z in
+        match get state v with
+        | None -> None
+        | Some term ->
+            let ctxt = Zipper_set (v, ctxt z) in
+            Some (make term ctxt state))
+      (focus z)
+
   let rec move_at_exn (z : t) (i : int) : t =
     let ctxt = ctxt z in
     let state = state z in
@@ -248,10 +260,10 @@ struct
                 let l = Array.sub subterms 0 i in
                 let r = Array.sub subterms (i + 1) (arity - i - 1) in
                 make subterms.(i) (Zipper_prim (prim, l, r, ctxt)) state)
-      (fun v ->
-        match get state v with
+      (fun _v ->
+        match deref z with
         | None -> invalid_arg "move_at_exn"
-        | Some t -> move_at_exn (make t (Zipper_set (v, ctxt)) state) i)
+        | Some z -> move_at_exn z i)
       (focus z)
 
   let move_at zipper (i : int) =

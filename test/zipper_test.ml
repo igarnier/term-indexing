@@ -37,15 +37,21 @@ let three t0 t1 t2 = Term.prim Three [| t0; t1; t2 |]
 
 let four t0 t1 t2 t3 = Term.prim Four [| t0; t1; t2; t3 |]
 
+let var v = Term.var v
+
 let symbol =
   Gen.frequencya
     [| (20, `Zero); (15, `One); (10, `Two); (5, `Three); (1, `Four) |]
+
+let var_gen = Gen.(int_bound 100 >|= fun i -> Term.var i)
 
 let term_gen : Term.t Gen.t =
   let open Gen in
   fix
     (fun self (path, n) ->
-      if n = 0 then return zero
+      if n = 0 then
+        let* b = bool in
+        if b then var_gen else return zero
       else
         symbol >>= function
         | `Zero -> return zero
@@ -199,17 +205,72 @@ let test_zip_set =
       card
       node_count
 
-(* let test_zip_hash = *)
-(*   Alcotest.test_case "zip_hash" `Quick @@ fun () -> *)
-(*   let t = Gen.generate1 term_gen in *)
-(*   let p = Gen.generate1 (path t) in *)
-(*   let zip = guide_zip (List.rev p) (Z.of_term t) in *)
-(*   ignore (Z.hash zip) *)
+let test_zip_unzip_stateful =
+  let term1 = two (one (var 0)) (two (var 0) (one (var 1))) in
+  let term2 = four zero zero zero zero in
+  let subst = Subst.of_seq @@ List.to_seq [(0, term2)] in
+  let rec guide_zip path zip =
+    match path with
+    | [] -> zip
+    | i :: path' -> (
+        match Term_graph.Zipper.move_at zip i with
+        | None ->
+            QCheck2.Test.fail_reportf
+              "guide_zip: invalid path (%a, %a)"
+              (Fmt.Dump.list Fmt.int)
+              path
+              Term.pp
+              (Term_graph.Zipper.cursor zip)
+        | Some zip' -> guide_zip path' zip')
+  in
+  QCheck2.Test.make ~count:100 ~name:"zip_unzip_stateful" (path term1)
+  @@ fun p ->
+  let zip = guide_zip (List.rev p) (Term_graph.Zipper.of_term (term1, subst)) in
+  let (unzip, subst') = Term_graph.Zipper.to_term zip in
+  if Term.equal term1 unzip && Subst.equal subst subst' then true
+  else
+    QCheck2.Test.fail_reportf
+      "unzip (zip t) =/= t\nt = %a\nunzip (zip t) = %a\npath = %a"
+      Term.pp
+      term1
+      Term.pp
+      unzip
+      Fmt.Dump.(list Fmt.int)
+      p
+
+let test_rewrite_stateful =
+  Alcotest.test_case "rewrite_stateful" `Quick (fun () ->
+      let term1 = two (one (var 0)) (two (var 0) (one (var 1))) in
+      let term2 = four zero zero zero zero in
+      let subst = Subst.of_seq @@ List.to_seq [(0, term2)] in
+      let zipper = Term_graph.Zipper.of_term (term1, subst) in
+      let zipper = Term_graph.Zipper.move_at_exn zipper 1 in
+      let zipper = Term_graph.Zipper.move_at_exn zipper 0 in
+      let zipper' = Term_graph.Zipper.deref zipper |> Option.get in
+      let result = Term_graph.Zipper.replace zero zipper' in
+      let (unzip, subst') = Term_graph.Zipper.to_term result in
+      if
+        Term.equal term1 unzip
+        && Subst.equal subst' (Subst.of_seq @@ List.to_seq [(0, zero)])
+      then ()
+      else Alcotest.failf "unzipped: %a@." Term.pp unzip ;
+      let zipper' = Term_graph.Zipper.move_at_exn zipper 0 in
+      let result = Term_graph.Zipper.replace (one zero) zipper' in
+      let (unzip, subst') = Term_graph.Zipper.to_term result in
+      if
+        Term.equal term1 unzip
+        && Subst.equal
+             subst'
+             (Subst.of_seq @@ List.to_seq [(0, four (one zero) zero zero zero)])
+      then ()
+      else Alcotest.failf "unzipped: %a@." Term.pp unzip)
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
 let () =
   Alcotest.run
     "path"
-    [ ("zip_unzip", conv [test_zip_unzip; test_zip_move_up]);
-      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]) ]
+    [ ( "zip_unzip",
+        conv [test_zip_unzip; test_zip_move_up; test_zip_unzip_stateful] );
+      ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]);
+      ("rewrite_stateful", [test_rewrite_stateful]) ]
