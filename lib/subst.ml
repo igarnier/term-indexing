@@ -9,8 +9,6 @@ module Make
 
   type t = T.t M.t
 
-  type value = term
-
   let empty = M.empty
 
   let is_empty = M.is_empty

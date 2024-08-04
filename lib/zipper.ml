@@ -1,3 +1,5 @@
+(* The implementation of the zipper is parameterized by a representation of its state.
+   This allows us to shave a word per zipper allocation when we don't care about the state. *)
 module type Zipper_impl = sig
   type term
 

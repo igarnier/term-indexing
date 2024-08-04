@@ -240,22 +240,6 @@ module type Term = sig
 end
 
 (** The module type of read-only states *)
-module type Read_only = sig
-  (** The type of states *)
-  type t
-
-  type var := int
-
-  (** The type of values *)
-  type value
-
-  (** [get k state] returns [Some v] if the key [k] is associated to the value [v] in [state], or [None] otherwise. *)
-  val get : var -> t -> value option
-
-  (** [get_exn k state] returns the value associated to [k] in [state].
-      Raises [Not_found] if [k] is not in the domain of [state]. *)
-  val get_exn : var -> t -> value
-end
 
 (** The module type of substitutions *)
 module type Subst = sig
@@ -266,8 +250,6 @@ module type Subst = sig
 
   (** The type of substitutions *)
   type t
-
-  include Read_only with type t := t and type value = term
 
   val of_seq : (var * term) Seq.t -> t
 
@@ -285,6 +267,13 @@ module type Subst = sig
 
   (** [equal s1 s2] checks equality of substitutions. *)
   val equal : t -> t -> bool
+
+  (** [get k state] returns [Some v] if the key [k] is associated to the value [v] in [state], or [None] otherwise. *)
+  val get : var -> t -> term option
+
+  (** [get_exn k state] returns the value associated to [k] in [state].
+      Raises [Not_found] if [k] is not in the domain of [state]. *)
+  val get_exn : var -> t -> term
 
   (** [add v t subst] adds a mapping from [v] to [t] in [subst].
       If [v] is already in the domain of [subst], the previous mapping is replaced.
