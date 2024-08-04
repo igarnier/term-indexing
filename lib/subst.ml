@@ -29,9 +29,6 @@ module Make
 
   let get = M.find_opt
 
-  let get_exn v subst =
-    match M.find_opt v subst with None -> raise Not_found | Some t -> t
-
   let add k term subst =
     T.destruct
       (fun _prim _subterms -> ())

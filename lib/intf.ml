@@ -271,10 +271,6 @@ module type Subst = sig
   (** [get k state] returns [Some v] if the key [k] is associated to the value [v] in [state], or [None] otherwise. *)
   val get : var -> t -> term option
 
-  (** [get_exn k state] returns the value associated to [k] in [state].
-      Raises [Not_found] if [k] is not in the domain of [state]. *)
-  val get_exn : var -> t -> term
-
   (** [add v t subst] adds a mapping from [v] to [t] in [subst].
       If [v] is already in the domain of [subst], the previous mapping is replaced.
 
