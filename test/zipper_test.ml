@@ -265,6 +265,21 @@ let test_rewrite_stateful =
       then ()
       else Alcotest.failf "unzipped: %a@." Term.pp unzip)
 
+let test_fold =
+  Alcotest.test_case "fold_stateful" `Quick (fun () ->
+      let term1 = two (one (var 0)) (two (var 0) (one (var 1))) in
+      let term2 = four zero zero zero zero in
+      let subst = Subst.of_seq @@ List.to_seq [(0, term2)] in
+      let zipper = Term_graph.Zipper.of_term (term1, subst) in
+      let folded =
+        Term_graph.Zipper.fold (fun z acc -> z :: acc) zipper [] |> List.rev
+      in
+      List.iter
+        (fun z ->
+          let term = Term_graph.Zipper.cursor z in
+          Format.printf "%a@." Term.pp term)
+        folded)
+
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
 let () =
@@ -273,4 +288,5 @@ let () =
     [ ( "zip_unzip",
         conv [test_zip_unzip; test_zip_move_up; test_zip_unzip_stateful] );
       ("zip_compare", conv [test_zip_compare_eq; test_zip_eq; test_zip_set]);
-      ("rewrite_stateful", [test_rewrite_stateful]) ]
+      ("rewrite_stateful", [test_rewrite_stateful]);
+      ("fold_stateful", [test_fold]) ]

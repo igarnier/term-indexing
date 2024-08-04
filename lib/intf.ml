@@ -518,11 +518,17 @@ module type Zipper = sig
   (** [replace t z] is the zipper obtained by replacing the term at the focus of [z] by [t]. *)
   val replace : term -> t -> t
 
-  (** [fold f acc z] folds a zipper over the subterms of [cursor z] (including [cursor z]). *)
+  (** [fold f acc z] folds a zipper over the subterms of [cursor z] (including [cursor z]).
+
+      [fold] does not follow the links given by the substitution underlying [z], if any.
+  *)
   val fold : (t -> 'a -> 'a) -> t -> 'a -> 'a
 
   type var := int
 
-  (** [fold_variables f acc z] folds a zipper over the subterms of [cursor z] which are variables. *)
+  (** [fold_variables f acc z] folds a zipper over the subterms of [cursor z] which are variables.
+
+      [fold_variables] does not follow the links given by the substitution underlying [z], if any.
+  *)
   val fold_variables : (var -> t -> 'a -> 'a) -> t -> 'a -> 'a
 end
