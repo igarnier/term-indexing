@@ -260,14 +260,13 @@ let subst =
 ]}
 
 The terms associated to each variable in the domain of a substitution can be
-obtained through {{!Term_indexing.Intf.Subst.eval}[Subst.eval]}
-(or {{!Term_indexing.Intf.Subst.eval_exn}[Subst.eval_exn]} for the raising variant).
+obtained through {{!Term_indexing.Intf.Subst.get}[Subst.get]}.
 
 {[
 let () =
-  assert (Option.equal Term.equal (Subst.eval 0 subst) (Some (float 0.0)))
+  assert (Option.equal Term.equal (Subst.get 0 subst) (Some (float 0.0)))
 
-let () = assert (Option.equal Term.equal (Subst.eval 3 subst) None)
+let () = assert (Option.equal Term.equal (Subst.get 3 subst) None)
 ]}
 
 One can also apply a substitution to the variables contained in a term using
@@ -318,7 +317,7 @@ let uf_state = Unification.empty ()
 One can unify terms using {{!Term_indexing.Intf.Unification.unify}[Unification.unify]}.
 This function returns [None] when no unifier can be found, or an updated state in the other case.
 At any point, we can get a solution from the state using
-{{!Term_indexing.Intf.Unification.subst}[Unification.subst]} which returns a substitution.
+{{!Term_indexing.Intf.Unification.val-subst}[Unification.subst]} which returns a substitution.
 
 {[
 let t1 = add (mul (float 1.0) (float 2.0)) (var 1)

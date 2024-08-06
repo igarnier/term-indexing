@@ -200,6 +200,12 @@ module type Term_core = sig
 
   (** [fold f acc t] folds [f] over the subterms of [t] *)
   val fold : (t -> 'b -> 'b) -> t -> 'b -> 'b
+
+  (**/**)
+
+  val to_tree : t -> PrintBox.t
+
+  (**/**)
 end
 
 (** The module type of first-order terms *)
@@ -473,6 +479,9 @@ module type Zipper = sig
   (** For plain zippers, ['a with_state = 'a]. When doing term graph edition, this type encapsulates the underlying
       substitution. *)
   type 'a with_state
+
+  (** Pretty-printing zippers. *)
+  val pp : t Fmt.t
 
   (** [compare] is a total order. *)
   val compare : t -> t -> int

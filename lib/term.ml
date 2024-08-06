@@ -236,6 +236,13 @@ module Make_hash_consed
   let pp_sexp fmtr term = pp_sexp P.pp fmtr term
 
   let uid term = term.Hashcons.tag
+
+  let rec to_tree term =
+    let open PrintBox in
+    match term.Hashcons.node with
+    | Var v -> sprintf "var(%d)" v
+    | Prim (p, subterms, _) ->
+        tree (asprintf "%a" P.pp p) (List.map to_tree (Array.to_list subterms))
 end
 [@@ocaml.inline]
 

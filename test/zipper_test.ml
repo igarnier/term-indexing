@@ -283,6 +283,16 @@ let test_fold =
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
 
 let () =
+  let term1 = two (one (var 0)) (two (var 0) (one (var 1))) in
+  let term2 = four zero zero zero zero in
+  let subst = Subst.of_seq @@ List.to_seq [(0, term2)] in
+  let zipper = Term_graph.Zipper.of_term (term1, subst) in
+  Term_graph.Zipper.fold_variables
+    (fun _ vz () -> Format.printf "%a@." Term_graph.Zipper.pp vz)
+    zipper
+    ()
+
+let () =
   Alcotest.run
     "path"
     [ ( "zip_unzip",
