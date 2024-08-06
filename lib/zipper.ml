@@ -43,6 +43,109 @@ struct
 
   type 'a with_state = 'a * S.state
 
+  let rec pp_ctxt k fmtr (ctxt : ctxt) =
+    let open Format in
+    match ctxt with
+    | Zipper_top -> k fmtr ()
+    | Zipper_prim1 (prim, ctxt) ->
+        pp_ctxt
+          (fun fmtr () -> fprintf fmtr "@[<hv 1>[%a %a]@]" P.pp prim k ())
+          fmtr
+          ctxt
+    | Zipper_prim2_0 (prim, t1, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf fmtr "@[<hv 1>[%a %a@ %a]@]" P.pp prim k () T.pp_sexp t1)
+          fmtr
+          ctxt
+    | Zipper_prim2_1 (prim, t0, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf fmtr "@[<hv 1>[%a %a@ %a]@]" P.pp prim T.pp_sexp t0 k ())
+          fmtr
+          ctxt
+    | Zipper_prim3_0 (prim, t1, t2, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf
+              fmtr
+              "@[<hv 1>[%a %a@ %a@ %a]@]"
+              P.pp
+              prim
+              k
+              ()
+              T.pp_sexp
+              t1
+              T.pp_sexp
+              t2)
+          fmtr
+          ctxt
+    | Zipper_prim3_1 (prim, t0, t2, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf
+              fmtr
+              "@[<hv 1>[%a %a@ %a@ %a]@]"
+              P.pp
+              prim
+              T.pp_sexp
+              t0
+              k
+              ()
+              T.pp_sexp
+              t2)
+          fmtr
+          ctxt
+    | Zipper_prim3_2 (prim, t0, t1, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf
+              fmtr
+              "@[<hv 1>[%a %a@ %a@ %a]@]"
+              P.pp
+              prim
+              T.pp_sexp
+              t0
+              T.pp_sexp
+              t1
+              k
+              ())
+          fmtr
+          ctxt
+    | Zipper_prim (prim, bef, aft, ctxt) ->
+        pp_ctxt
+          (fun fmtr () ->
+            fprintf
+              fmtr
+              "@[<hv 1>[%a %a@ %a@ %a]@]"
+              P.pp
+              prim
+              (pp_print_array
+                 ~pp_sep:(fun fmtr () -> fprintf fmtr "@ ")
+                 T.pp_sexp)
+              bef
+              k
+              ()
+              (pp_print_array
+                 ~pp_sep:(fun fmtr () -> fprintf fmtr "@ ")
+                 T.pp_sexp)
+              aft)
+          fmtr
+          ctxt
+    | Zipper_set (v, ctxt) ->
+        pp_ctxt
+          (fun fmtr () -> fprintf fmtr "@[<hv 1>[set %d@ %a]@]" v k ())
+          fmtr
+          ctxt
+
+  let pp fmtr z =
+    let ctxt = S.ctxt z in
+    let focus = S.focus z in
+    pp_ctxt
+      (fun fmtr () -> Format.fprintf fmtr "[%a]" T.pp_sexp focus)
+      fmtr
+      ctxt
+
   let rec compare z1 z2 =
     let c = T.compare (focus z1) (focus z2) in
     if c <> 0 then c else compare_ctxt (ctxt z1) (ctxt z2)
