@@ -31,7 +31,7 @@ module Make_internal (P : Intf.Signature) = struct
   module Zipper = Zipper.Make (P) (Term)
   module Pattern = Pattern.Make (P) (Term) (Zipper)
   module Unification = Unification.Make (P) (Term) (Subst)
-  module Index = Term_index.Make (P) (Term) (Subst)
+  module Index = Term_index.Make (P) (Term)
 end
 [@@ocaml.inline]
 
@@ -63,11 +63,7 @@ module Make (P : Intf.Signature) : sig
     Intf.Unification with type term = Term.t and type subst = Subst.t
 
   (** Term indexing. *)
-  module Index :
-    Intf.Term_index
-      with type prim = P.t
-       and type term = Term.t
-       and type subst = Subst.t
+  module Index : Intf.Term_index with type prim = P.t and type term = Term.t
 
   module Term_graph : sig
     module Zipper :

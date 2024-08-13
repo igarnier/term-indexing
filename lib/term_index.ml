@@ -41,13 +41,25 @@ module IS = Set.Make (Int)
 
 module Make
     (P : Intf.Signature)
-    (T : Intf.Term with type prim = P.t and type t = P.t Term.term)
-    (S : Intf.Subst with type term = T.t) : sig
-  include
-    Intf.Term_index
-      with type term = T.t
-       and type prim = P.t
-       and type subst = S.t
+    (T : sig
+      type prim = P.t
+
+      type t
+
+      type var := int
+
+      (** [destruct ifprim ifvar t] performs case analysis on the term [t] *)
+      val destruct : (prim -> t array -> 'a) -> (var -> 'a) -> t -> 'a
+
+      (** [prim p ts] constructs a term with head equal to [p] and subterms equal to [ts]
+
+      Raises [Invalid_argument] if the length of [ts] does not match the arity of [p]. *)
+      val prim : prim -> t array -> t
+
+      (** [var v] construcst a variable [v] *)
+      val var : var -> t
+    end) : sig
+  include Intf.Term_index with type term = T.t and type prim = P.t
 
   module Internal_for_tests : sig
     type subst
@@ -62,8 +74,6 @@ end = struct
   open IRef
 
   type term = T.t
-
-  type subst = S.t
 
   module Internal_term = struct
     type prim = P.t
@@ -183,8 +193,11 @@ end = struct
 
     let rec of_term : var_table -> T.t -> t =
      fun table term ->
-      match term.Hashcons.node with
-      | Term.Var v -> (
+      T.destruct
+        (fun p subtrees ->
+          let subtrees = Array.map (fun t -> of_term table t) subtrees in
+          prim p subtrees)
+        (fun v ->
           match Hashtbl.find_opt table v with
           | None ->
               (* Note that the [desc_ptr] is shared among all variables. *)
@@ -192,9 +205,7 @@ end = struct
               Hashtbl.add table v desc_ptr ;
               ref (Var (v, desc_ptr))
           | Some desc_ptr -> ref (Var (v, desc_ptr)))
-      | Term.Prim (p, subtrees, _) ->
-          let subtrees = Array.map (fun t -> of_term table t) subtrees in
-          prim p subtrees
+        term
 
     let to_term term =
       let rec to_term : IS.t -> t -> T.t =
@@ -212,21 +223,14 @@ end = struct
       in
       to_term IS.empty term
 
-    let get_subst : t -> S.t =
-      let rec loop : S.t -> t -> S.t =
-       fun subst term ->
-        match !term with
-        | Var (v, repr) -> (
-            match !repr with
-            | IVar | EVar -> subst
-            | Prim _ | Var _ ->
-                if S.get v subst |> Option.is_some then subst
-                else S.add v (to_term repr) subst)
-        | Prim (_, subtrees) -> Array.fold_left loop subst subtrees
-        | IVar -> subst
-        | EVar -> assert false
-      in
-      fun term -> loop (S.empty ()) term
+    let rec fold_subst f term acc =
+      match !term with
+      | Var (v, repr) -> (
+          match !repr with IVar | EVar -> acc | Prim _ | Var _ -> f v repr acc)
+      | Prim (_, subtrees) ->
+          Array.fold_left (fun acc term -> fold_subst f term acc) acc subtrees
+      | IVar -> acc
+      | EVar -> assert false
   end
 
   type internal_term = Internal_term.t
@@ -237,7 +241,7 @@ end = struct
 
   let to_term = Internal_term.to_term
 
-  let get_subst = Internal_term.get_subst
+  let fold_subst = Internal_term.fold_subst
 
   let reduce = Internal_term.reduce
 

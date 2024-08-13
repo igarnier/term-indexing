@@ -479,7 +479,7 @@ module Make (P : Intf.Signature) (T : Intf.Term with type prim = P.t) :
   let to_term z = to_term z |> fst
 end
 
-(* Simple, stateless zipper  *)
+(* Stateful zipper  *)
 module Make_stateful
     (P : Intf.Signature)
     (T : Intf.Term with type prim = P.t)

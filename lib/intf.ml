@@ -354,9 +354,6 @@ module type Term_index = sig
   (** [term] is the type of first-order terms. *)
   type term
 
-  (** [subst] is the type of substitutions, i.e. finite functions from variables to {!term}. *)
-  type subst
-
   type var := int
 
   (** [internal_term] is the internal representation of terms in the index.
@@ -377,8 +374,10 @@ module type Term_index = sig
       Raises [Invalid_argument] if [term] contains a cycle. *)
   val to_term : internal_term -> term
 
-  (** [get_subst term] extracts a substitution out of [term] *)
-  val get_subst : internal_term -> subst
+  (** [fold_subst f acc term] folds over the substitution contained in [term]. This function
+      is meant to be called on transient terms obtained during matching operations. *)
+  val fold_subst :
+    (var -> internal_term -> 'a -> 'a) -> internal_term -> 'a -> 'a
 
   (** [reduce fprim fvar term] reduces [term] by recursively
       applying [fprim] on primitives applications and [fvar] on variables.

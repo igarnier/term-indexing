@@ -934,7 +934,12 @@ module Regression_checks = struct
         let acc = ref [] in
         Index.iter_generalize_transient
           (fun term _ ->
-            let subst = Index.get_subst term in
+            let subst =
+              Index.fold_subst
+                (fun v iterm s -> Subst.add v (Index.to_term iterm) s)
+                term
+                (Subst.empty ())
+            in
             acc := (Index.to_term term, subst) :: !acc)
           index
           query ;
@@ -965,7 +970,12 @@ module Regression_checks = struct
         let acc = ref [] in
         Index.iter_generalize_transient
           (fun term _ ->
-            let subst = Index.get_subst term in
+            let subst =
+              Index.fold_subst
+                (fun v iterm s -> Subst.add v (Index.to_term iterm) s)
+                term
+                (Subst.empty ())
+            in
             acc := (Index.to_term term, subst) :: !acc)
           index
           query ;
