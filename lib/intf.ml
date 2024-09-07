@@ -356,47 +356,40 @@ module type Term_index = sig
 
   type var := int
 
-  (** [internal_term] is the internal representation of terms in the index.
+  (** [iterm] is the internal representation of terms in the index.
 
       Due to the details of the implementation, it might be the case that
       the result of querying the index is a term containing cycle. This might
       occur if for instance the querying term contains variables overlapping
       the terms contained in the index.
 
-      The type [internal_term] is also used to represent substitutions. *)
-  type internal_term
+      The type [iterm] is also used to represent substitutions. *)
+  type iterm
 
   (** [is_cyclic term] checks whether a term contains a cycle or not. *)
-  val is_cyclic : internal_term -> bool
+  val is_cyclic : iterm -> bool
 
   (** [to_term term] creates a new term representing the internal term [term].
 
       Raises [Invalid_argument] if [term] contains a cycle. *)
-  val to_term : internal_term -> term
+  val to_term : iterm -> term
 
   (** [fold_subst f acc term] folds over the substitution contained in [term]. This function
       is meant to be called on transient terms obtained during matching operations. *)
-  val fold_subst :
-    (var -> internal_term -> 'a -> 'a) -> internal_term -> 'a -> 'a
+  val fold_subst : (var -> iterm -> 'a -> 'a) -> iterm -> 'a -> 'a
 
   (** [reduce fprim fvar term] reduces [term] by recursively
       applying [fprim] on primitives applications and [fvar] on variables.
       If the variable is associated to a term in a substitution, the term is
       passed to [fvar] as [Some term]. *)
   val reduce :
-    (prim -> 'a array -> 'a) ->
-    (var -> internal_term option -> 'a) ->
-    internal_term ->
-    'a
+    (prim -> 'a array -> 'a) -> (var -> iterm option -> 'a) -> iterm -> 'a
 
   (** [destruct ifprim ifvar t] performs case analysis on the term [t] *)
   val destruct :
-    (prim -> internal_term array -> 'a) ->
-    (var -> internal_term option -> 'a) ->
-    internal_term ->
-    'a
+    (prim -> iterm array -> 'a) -> (var -> iterm option -> 'a) -> iterm -> 'a
 
-  val pp_internal_term : internal_term Fmt.t
+  val pp_iterm : iterm Fmt.t
 
   (** ['a t] is the type of term indexes mapping terms to values of type ['a]. *)
   type 'a t
@@ -433,31 +426,28 @@ module type Term_index = sig
   val iter_generalize : (term -> 'a -> unit) -> 'a t -> term -> unit
 
   (** The transient variants below are more efficient but must be used with care.
-      The lifetime of the [internal_term]s ends when each call to the closure
-      returns. Do not keep pointers to those [internal_term]s.  *)
+      The lifetime of the [iterm]s ends when each call to the closure
+      returns. Do not keep pointers to those [iterm]s.  *)
 
   (** [iter_transient f index] iterates [f] on all bindings of [index].
-      Note that the lifetime of the [internal_term] passed to [f] ends
+      Note that the lifetime of the [iterm] passed to [f] ends
       when [f] returns. *)
-  val iter_transient : (internal_term -> 'a -> unit) -> 'a t -> unit
+  val iter_transient : (iterm -> 'a -> unit) -> 'a t -> unit
 
   (** [iter_unfiable_transient f index query] applies [f] on all terms unifiable with [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
+      Note that the lifetime of the [iterm] passed to [f] ends
       when [f] returns. *)
-  val iter_unifiable_transient :
-    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  val iter_unifiable_transient : (iterm -> 'a -> unit) -> 'a t -> term -> unit
 
   (** [iter_specialize_transient f index query] applies [f] on all terms specializing [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
+      Note that the lifetime of the [iterm] passed to [f] ends
       when [f] returns. *)
-  val iter_specialize_transient :
-    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  val iter_specialize_transient : (iterm -> 'a -> unit) -> 'a t -> term -> unit
 
   (** [iter_generalize_transient f index query] applies [f] on all terms generalizing [query].
-      Note that the lifetime of the [internal_term] passed to [f] ends
+      Note that the lifetime of the [iterm] passed to [f] ends
       when [f] returns. *)
-  val iter_generalize_transient :
-    (internal_term -> 'a -> unit) -> 'a t -> term -> unit
+  val iter_generalize_transient : (iterm -> 'a -> unit) -> 'a t -> term -> unit
 end
 
 (** The module type of zippers. *)

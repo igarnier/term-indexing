@@ -2,41 +2,6 @@ module Vec = Containers.Vector
 
 let debug_mode = false
 
-(* References equipped with unique integers for debugging/printing purposes *)
-module IRef : sig
-  type 'a iref
-
-  val ref : 'a -> 'a iref
-
-  val ( ! ) : 'a iref -> 'a
-
-  val ( := ) : 'a iref -> 'a -> unit
-
-  val pp_ref : 'a Fmt.t -> 'a iref Fmt.t
-
-  val uid : 'a iref -> int
-end = struct
-  type 'a iref = { mutable contents : 'a; uid : int }
-
-  let fresh : unit -> int =
-    let counter = ref 0 in
-    fun () ->
-      let uid = !counter in
-      counter := !counter + 1 ;
-      uid
-
-  let ref x = { contents = x; uid = fresh () }
-
-  let ( ! ) r = r.contents
-
-  let ( := ) r x = r.contents <- x
-
-  let pp_ref pp_data fmtr r =
-    Format.fprintf fmtr "%d=%a" r.uid pp_data r.contents
-
-  let uid r = r.uid
-end
-
 module IS = Set.Make (Int)
 
 module Make
@@ -66,192 +31,22 @@ module Make
 
     val pp_subst : subst Fmt.t
 
-    val of_term : 'a t -> term -> internal_term
+    val of_term : 'a t -> term -> iterm
 
     val check_invariants : 'a t -> bool
   end
 end = struct
-  open IRef
-
   type term = T.t
-
-  module Internal_term = struct
-    type prim = P.t
-
-    type var = int
-
-    type desc =
-      | Prim of prim * t array
-      | Var of var * t
-          (** External (user-inserted) variables. Contains a pointer
-              to a representative term to be used during unification.
-              It is a free variable if and only if it points to [IVar] or [EVar]. *)
-      | IVar  (** Internal variables, used to implement sharing in the tree. *)
-      | EVar
-          (** Always wrapped in a [Var]. Distinguishes query external variables from
-                  non-query external variables. *)
-
-    and t = desc iref
-
-    type var_table = (int, t) Hashtbl.t
-
-    module Pp = struct
-      let to_tree term =
-        let rec to_tree : IS.t -> t -> PrintBox.t =
-         fun set term ->
-          if IS.mem (uid term) set then
-            Format.kasprintf PrintBox.text "CYCLE(%d)" (uid term)
-          else
-            let set = IS.add (uid term) set in
-            match !term with
-            | Prim (prim, subtrees) ->
-                PrintBox.tree
-                  (Format.kasprintf PrintBox.text "%d:%a" (uid term) P.pp prim)
-                  (Array.to_list (Array.map (to_tree set) subtrees))
-            | Var (v, repr) ->
-                PrintBox.tree
-                  (Format.kasprintf PrintBox.text "%d:V(%d)" (uid term) v)
-                  [to_tree set repr]
-            | IVar -> PrintBox.asprintf "%d:ivar" (uid term)
-            | EVar -> PrintBox.asprintf "%d:evar" (uid term)
-        in
-        to_tree IS.empty term
-
-      let pp fmtr term =
-        let tree = to_tree term in
-        PrintBox_text.pp fmtr tree
-    end
-
-    include Pp
-
-    let uid (t : t) = uid t
-
-    let is_cyclic (term : t) =
-      let rec loop : IS.t -> t -> bool =
-       fun set term ->
-        if IS.mem (uid term) set then true
-        else
-          let set = IS.add (uid term) set in
-          match !term with
-          | Var (_, repr) -> (
-              match !repr with EVar | IVar -> false | _ -> loop set repr)
-          | Prim (_, subtrees) ->
-              Array.exists (fun term -> loop set term) subtrees
-          | IVar -> false
-          | EVar -> assert false
-      in
-      loop IS.empty term
-
-    let is_ivar (t : t) = match !t with IVar -> true | _ -> false
-
-    let prim p subterms = ref (Prim (p, subterms))
-
-    let reduce fprim fvar term =
-      let rec loop fprim fvar visited term =
-        match !term with
-        | Prim (prim, subterms) ->
-            fprim prim (Array.map (loop fprim fvar visited) subterms)
-        | Var (v, repr) -> (
-            match !repr with
-            | IVar | EVar -> fvar v None
-            | Prim _ | Var _ ->
-                if IS.mem (uid repr) visited then fvar v (Some repr)
-                else fvar v None)
-        | IVar | EVar -> assert false
-      in
-      loop fprim fvar IS.empty term
-
-    let destruct fprim fvar (term : t) =
-      match !term with
-      | Prim (prim, subterms) -> fprim prim subterms
-      | Var (v, repr) -> (
-          match !repr with
-          | IVar | EVar -> fvar v None
-          | Prim _ | Var _ -> fvar v (Some repr))
-      | IVar | EVar -> assert false
-
-    (* Precondition: input is a [Var]
-       Postcondition: returns the representative term and the variable *)
-    let rec get_repr (var : t) =
-      match !var with
-      | Var (_, repr) -> (
-          match !repr with
-          | IVar | EVar | Prim _ -> (repr, var)
-          | Var (_, _) -> get_repr repr)
-      | IVar | EVar | Prim _ -> assert false
-
-    let ivars term =
-      let rec loop term acc =
-        match !term with
-        | Var _ -> acc
-        | Prim (_, subterms) ->
-            Array.fold_left (fun acc term -> loop term acc) acc subterms
-        | IVar -> term :: acc
-        | EVar -> assert false
-      in
-      loop term []
-
-    let rec of_term : var_table -> T.t -> t =
-     fun table term ->
-      T.destruct
-        (fun p subtrees ->
-          let subtrees = Array.map (fun t -> of_term table t) subtrees in
-          prim p subtrees)
-        (fun v ->
-          match Hashtbl.find_opt table v with
-          | None ->
-              (* Note that the [desc_ptr] is shared among all variables. *)
-              let desc_ptr = ref IVar in
-              Hashtbl.add table v desc_ptr ;
-              ref (Var (v, desc_ptr))
-          | Some desc_ptr -> ref (Var (v, desc_ptr)))
-        term
-
-    let to_term term =
-      let rec to_term : IS.t -> t -> T.t =
-       fun set term ->
-        let set =
-          if IS.mem (uid term) set then invalid_arg "cyclic term"
-          else IS.add (uid term) set
-        in
-        match !term with
-        | Var (v, _repr) -> T.var v
-        | Prim (p, subtrees) ->
-            let subtrees = Array.map (to_term set) subtrees in
-            T.prim p subtrees
-        | IVar | EVar -> assert false
-      in
-      to_term IS.empty term
-
-    let rec fold_subst f term acc =
-      match !term with
-      | Var (v, repr) -> (
-          match !repr with IVar | EVar -> acc | Prim _ | Var _ -> f v repr acc)
-      | Prim (_, subtrees) ->
-          Array.fold_left (fun acc term -> fold_subst f term acc) acc subtrees
-      | IVar -> acc
-      | EVar -> assert false
-  end
-
-  type internal_term = Internal_term.t
 
   type prim = P.t
 
-  let is_cyclic = Internal_term.is_cyclic
+  type desc = Prim of prim * iterm array | Var of int * iterm | IVar | EVar
 
-  let to_term = Internal_term.to_term
+  and iterm = { mutable desc : desc; uid : int }
 
-  let fold_subst = Internal_term.fold_subst
+  type var_table = (int, iterm) Hashtbl.t
 
-  let reduce = Internal_term.reduce
-
-  let destruct = Internal_term.destruct
-
-  let pp_internal_term = Internal_term.pp
-
-  type iref = internal_term
-
-  type isubst = (iref * internal_term) list
+  type isubst = (iterm * iterm) list
 
   type 'a node =
     { mutable head : isubst;
@@ -261,14 +56,49 @@ end = struct
 
   type 'a t =
     { nodes : 'a node Vec.vector;  (** [nodes] is the first layer of trees *)
-      root : internal_term;
+      root : iterm;
           (** [root] is set to [IVar] outside of insertion or lookup operations.
               It is set to the term being inserted or the query term otherwise. *)
-      var_table : Internal_term.var_table
-          (** A table used during lookup operations *)
+      var_table : var_table  (** A table used during lookup operations *)
     }
 
+  let uid { uid; _ } = uid
+
+  let fresh : unit -> int =
+    let counter = ref 0 in
+    fun () ->
+      let uid = !counter in
+      counter := !counter + 1 ;
+      uid
+
+  let make desc = { uid = fresh (); desc }
+
   module Pp = struct
+    let iterm_to_print_tree term =
+      let rec to_tree : IS.t -> iterm -> PrintBox.t =
+       fun set term ->
+        if IS.mem (uid term) set then
+          Format.kasprintf PrintBox.text "CYCLE(%d)" (uid term)
+        else
+          let set = IS.add (uid term) set in
+          match term.desc with
+          | Prim (prim, subtrees) ->
+              PrintBox.tree
+                (Format.kasprintf PrintBox.text "%d:%a" (uid term) P.pp prim)
+                (Array.to_list (Array.map (to_tree set) subtrees))
+          | Var (v, repr) ->
+              PrintBox.tree
+                (Format.kasprintf PrintBox.text "%d:V(%d)" (uid term) v)
+                [to_tree set repr]
+          | IVar -> PrintBox.asprintf "%d:ivar" (uid term)
+          | EVar -> PrintBox.asprintf "%d:evar" (uid term)
+      in
+      to_tree IS.empty term
+
+    let pp_iterm fmtr term =
+      let tree = iterm_to_print_tree term in
+      PrintBox_text.pp fmtr tree
+
     let box_of_data pp_data data =
       let open PrintBox in
       match data with
@@ -282,7 +112,7 @@ end = struct
            ~bars:true
            (List.map
               (fun (v, t) ->
-                hlist [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
+                hlist [iterm_to_print_tree v; iterm_to_print_tree t])
               subst)
 
     let box_of_subst_with_data pp_data subst data =
@@ -293,8 +123,7 @@ end = struct
                ~bars:true
                (List.map
                   (fun (v, t) ->
-                    hlist
-                      [Internal_term.Pp.to_tree v; Internal_term.Pp.to_tree t])
+                    hlist [iterm_to_print_tree v; iterm_to_print_tree t])
                   subst);
              box_of_data pp_data data ]
 
@@ -322,9 +151,119 @@ end = struct
 
   let pp = Pp.pp
 
+  let pp_iterm = Pp.pp_iterm
+
   let pp_subst = Pp.pp_subst
 
-  let of_term index term = Internal_term.of_term index.var_table term
+  let is_cyclic (term : iterm) =
+    let rec loop : IS.t -> iterm -> bool =
+     fun set term ->
+      if IS.mem (uid term) set then true
+      else
+        let set = IS.add (uid term) set in
+        match term.desc with
+        | Var (_, repr) -> (
+            match repr.desc with EVar | IVar -> false | _ -> loop set repr)
+        | Prim (_, subtrees) ->
+            Array.exists (fun term -> loop set term) subtrees
+        | IVar -> false
+        | EVar -> assert false
+    in
+    loop IS.empty term
+
+  let is_ivar (t : iterm) = match t.desc with IVar -> true | _ -> false
+
+  let prim p subterms = make (Prim (p, subterms))
+
+  let reduce fprim fvar term =
+    let rec loop fprim fvar visited term =
+      match term.desc with
+      | Prim (prim, subterms) ->
+          fprim prim (Array.map (loop fprim fvar visited) subterms)
+      | Var (v, repr) -> (
+          match repr.desc with
+          | IVar | EVar -> fvar v None
+          | Prim _ | Var _ ->
+              if IS.mem (uid repr) visited then fvar v (Some repr)
+              else fvar v None)
+      | IVar | EVar -> assert false
+    in
+    loop fprim fvar IS.empty term
+
+  let destruct fprim fvar term =
+    match term.desc with
+    | Prim (prim, subterms) -> fprim prim subterms
+    | Var (v, repr) -> (
+        match repr.desc with
+        | IVar | EVar -> fvar v None
+        | Prim _ | Var _ -> fvar v (Some repr))
+    | IVar | EVar -> assert false
+
+  (* Precondition: input is a [Var]
+     Postcondition: returns the representative term and the variable *)
+  let rec get_repr var =
+    match var.desc with
+    | Var (_, repr) -> (
+        match repr.desc with
+        | IVar | EVar | Prim _ -> (repr, var)
+        | Var (_, _) -> get_repr repr)
+    | IVar | EVar | Prim _ -> assert false
+
+  let ivars term =
+    let rec loop term acc =
+      match term.desc with
+      | Var _ -> acc
+      | Prim (_, subterms) ->
+          Array.fold_left (fun acc term -> loop term acc) acc subterms
+      | IVar -> term :: acc
+      | EVar -> assert false
+    in
+    loop term []
+
+  let rec iterm_of_term : var_table -> T.t -> iterm =
+   fun table term ->
+    T.destruct
+      (fun p subtrees ->
+        let subtrees = Array.map (fun t -> iterm_of_term table t) subtrees in
+        prim p subtrees)
+      (fun v ->
+        match Hashtbl.find_opt table v with
+        | None ->
+            (* Note that the [desc_ptr] is shared among all variables. *)
+            let desc_ptr = make IVar in
+            Hashtbl.add table v desc_ptr ;
+            make (Var (v, desc_ptr))
+        | Some desc_ptr -> make (Var (v, desc_ptr)))
+      term
+
+  let to_term term =
+    let rec to_term : IS.t -> iterm -> T.t =
+     fun set term ->
+      let set =
+        if IS.mem (uid term) set then invalid_arg "cyclic term"
+        else IS.add (uid term) set
+      in
+      match term.desc with
+      | Var (v, _repr) -> T.var v
+      | Prim (p, subtrees) ->
+          let subtrees = Array.map (to_term set) subtrees in
+          T.prim p subtrees
+      | IVar | EVar -> assert false
+    in
+    to_term IS.empty term
+
+  let rec fold_subst f term acc =
+    match term.desc with
+    | Var (v, repr) -> (
+        match repr.desc with
+        | IVar | EVar -> acc
+        | Prim _ | Var _ -> f v repr acc)
+    | Prim (_, subtrees) ->
+        Array.fold_left (fun acc term -> fold_subst f term acc) acc subtrees
+    | IVar -> acc
+    | EVar -> assert false
+
+  let of_term index term = iterm_of_term index.var_table term
 
   let subst_is_empty = function [] -> true | _ -> false
 
@@ -333,8 +272,8 @@ end = struct
     (* We need to wrap the term pointed to by [node_term] in a fresh ref cell;
        [node_term] will be pointing to either the [subst_term] or the fresh cell
        depending on which term is matched. *)
-    let residual_node = (node_term, ref !node_term) :: residual_node in
-    node_term := Internal_term.IVar ;
+    let residual_node = (node_term, make node_term.desc) :: residual_node in
+    node_term.desc <- IVar ;
     (residual_subst, residual_node)
 
   (* [mscg subst_term node_term residual_subst residual_node] destructively updates
@@ -342,11 +281,11 @@ end = struct
      [subst_term] and [node_term]. Both remainders are added to the residuals.
 
      Pre-condition: [subst_term] contains no [IVar]
-     Post-condition: generalized sub-terms of [node_term] are set to [Internal_term.IVar] and
+     Post-condition: generalized sub-terms of [node_term] are set to [IVar] and
      appear in the domain of both [residual_subst] and [residual_node] *)
-  let rec mscg (subst_term : internal_term) (node_term : internal_term)
+  let rec mscg (subst_term : iterm) (node_term : iterm)
       (residual_subst : isubst) (residual_node : isubst) : isubst * isubst =
-    match (!subst_term, !node_term) with
+    match (subst_term.desc, node_term.desc) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
         if P.equal prim1 prim2 then
           mscg_array args1 args2 residual_subst residual_node 0
@@ -371,8 +310,8 @@ end = struct
       in
       mscg_array args1 args2 residual_subst residual_node (i + 1)
 
-  let top_symbol_disagree (t1 : internal_term) (t2 : internal_term) =
-    match (!t1, !t2) with
+  let top_symbol_disagree (t1 : iterm) (t2 : iterm) =
+    match (t1.desc, t2.desc) with
     | (Prim (prim1, _), Prim (prim2, _)) -> not (P.equal prim1 prim2)
     | (Var (v1, _), Var (v2, _)) -> not (Int.equal v1 v2)
     | (Prim _, Var _) | (Var _, Prim _) -> true
@@ -387,12 +326,9 @@ end = struct
         false
 
   let create () =
-    { nodes = Vec.create ();
-      root = ref Internal_term.IVar;
-      var_table = Hashtbl.create 11
-    }
+    { nodes = Vec.create (); root = make IVar; var_table = Hashtbl.create 11 }
 
-  let reset subst = List.iter (fun (v, _) -> v := Internal_term.IVar) subst
+  let reset subst = List.iter (fun (v, _) -> v.desc <- IVar) subst
 
   (* Note: [update_subst] is not robust to sharing sub-terms across inserted terms. *)
   let update_subst term f (tree : 'a t) =
@@ -420,24 +356,24 @@ end = struct
                   this [IVar] may be set to a subterm to be matched against [t], which points to a term
                   that appeared in the position of [v] in one previously inserted term.
                 *)
-              assert (not (Internal_term.is_ivar t)) ;
-              if Internal_term.is_ivar v then
+              assert (not (is_ivar t)) ;
+              if is_ivar v then
                 (* variable is unset hence not in domain of [subst], binding goes to [residual_node] *)
                 (general, residual_subst, binding :: residual_node)
               else if top_symbol_disagree v t then (
                 (* Toplevel mismatch. *)
-                let desc = !v in
-                v := IVar ;
+                let desc = v.desc in
+                v.desc <- IVar ;
                 (* TODO: examine `generalize` and align *)
                 ( general,
-                  (v, ref desc) :: residual_subst,
+                  (v, make desc) :: residual_subst,
                   binding :: residual_node ))
               else
                 let (residual_subst, residual_node) =
                   mscg v t residual_subst residual_node
                 in
-                let () = assert (not (Internal_term.is_ivar t)) in
-                v := IVar ;
+                let () = assert (not (is_ivar t)) in
+                v.desc <- IVar ;
                 ((v, t) :: general, residual_subst, residual_node))
             ([], [], [])
             head
@@ -452,16 +388,9 @@ end = struct
         let () =
           if debug_mode then (
             assert (
-              List.for_all
-                (fun (v, t) ->
-                  Internal_term.is_ivar v && not (Internal_term.is_ivar t))
-                general) ;
-
+              List.for_all (fun (v, t) -> is_ivar v && not (is_ivar t)) general) ;
             assert (
-              List.for_all
-                (fun (v, t) ->
-                  Internal_term.is_ivar v && not (Internal_term.is_ivar t))
-                head))
+              List.for_all (fun (v, t) -> is_ivar v && not (is_ivar t)) head))
           else ()
         in
 
@@ -474,18 +403,18 @@ end = struct
           (* subst = residual_subst
              re-establish pre-condition for recursive call by reverting the
              state of variables in domain of [partial_residual_subst] *)
-          List.iter (fun (v, t) -> v := !t) partial_residual_subst ;
+          List.iter (fun (v, t) -> v.desc <- t.desc) partial_residual_subst ;
           insert_aux subst t (i + 1))
         else
           let residual_subst =
             List.fold_left
               (fun residual_subst ((v, _t) as binding) ->
-                if not (Internal_term.is_ivar v) then binding :: residual_subst
+                if not (is_ivar v) then binding :: residual_subst
                 else residual_subst)
               partial_residual_subst
               subst
           in
-          let () = List.iter (fun (v, t) -> v := !t) residual_subst in
+          let () = List.iter (fun (v, t) -> v.desc <- t.desc) residual_subst in
           if subst_is_empty residual_subst && subst_is_empty residual_node then
             (* exact match: general = head *)
             (* At this point:
@@ -535,7 +464,7 @@ end = struct
             reset residual_node ;
             reset residual_subst)
     in
-    tree.root := !term ;
+    tree.root.desc <- term.desc ;
     insert_aux [(tree.root, term)] tree.nodes 0
 
   module Stats = struct
@@ -566,26 +495,25 @@ end = struct
 
     let pp_subst = pp_subst
 
-    exception Not_well_scoped of internal_term * IS.t
+    exception Not_well_scoped of iterm * IS.t
 
     exception Not_properly_unset
 
     exception Trivial_subst of subst
 
     let rec all_unset_node node =
-      List.for_all (fun (v, _) -> Internal_term.is_ivar v) node.head
+      List.for_all (fun (v, _) -> is_ivar v) node.head
       && Vec.for_all all_unset_node node.subtrees
 
     let all_unset (index : 'a t) : bool = Vec.for_all all_unset_node index.nodes
 
-    let non_trivial subst =
-      not (List.exists (fun (_v, t) -> Internal_term.is_ivar t) subst)
+    let non_trivial subst = not (List.exists (fun (_v, t) -> is_ivar t) subst)
 
     let rec well_scoped_subst subst in_scope acc =
       match subst with
       | [] -> IS.union acc in_scope
       | (v, t) :: rest ->
-          let t_ivars = Internal_term.ivars t |> List.map (fun r -> uid r) in
+          let t_ivars = ivars t |> List.map (fun r -> uid r) in
           if not (IS.mem (uid v) in_scope) then
             raise (Not_well_scoped (v, in_scope))
           else
@@ -613,18 +541,17 @@ end = struct
   let update term f index = update_subst term f index
 
   let insert term data tree =
-    update (Internal_term.of_term tree.var_table term) (fun _ -> data) tree
+    update (iterm_of_term tree.var_table term) (fun _ -> data) tree
 
-  let update term f tree =
-    update (Internal_term.of_term tree.var_table term) f tree
+  let update term f tree = update (iterm_of_term tree.var_table term) f tree
 
   (*
      TODO: could implement substitutions as pair of vectors
    *)
 
   module Unifiable_query = struct
-    let rec unify undo_stack (term1 : internal_term) (term2 : internal_term) =
-      match (!term1, !term2) with
+    let rec unify undo_stack (term1 : iterm) (term2 : iterm) =
+      match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then unify_arrays undo_stack args1 args2 0
           else (undo_stack, false)
@@ -632,60 +559,60 @@ end = struct
           if repr_ptr1 == repr_ptr2 then (undo_stack, true)
           else
             (* term1, term2 are [Var], hence precondition of [get_repr] is satisfied *)
-            let (repr1, root_var1) = Internal_term.get_repr term1 in
-            let (repr2, root_var2) = Internal_term.get_repr term2 in
+            let (repr1, root_var1) = get_repr term1 in
+            let (repr2, root_var2) = get_repr term2 in
             (* invariant: root_var1, root_var2 are Var pointing to Prim or IVar *)
-            match (!repr1, !repr2) with
+            match (repr1.desc, repr2.desc) with
             | (Prim _, Prim _) -> unify undo_stack repr1 repr2
             | (Prim _, ((IVar | EVar) as desc2)) ->
                 (* let term2 point to term1 *)
-                repr2 := !root_var1 ;
+                repr2.desc <- root_var1.desc ;
                 ((repr2, desc2) :: undo_stack, true)
             | (((IVar | EVar) as desc1), Prim _) ->
                 (* let term1 point to term2 *)
-                repr1 := !root_var2 ;
+                repr1.desc <- root_var2.desc ;
                 ((repr1, desc1) :: undo_stack, true)
             | (((IVar | EVar) as desc1), (IVar | EVar)) ->
                 (* It may be the case that root_var1 == root_var2, if we
                    perform the assignment then we'll introduce a cycle. *)
                 if repr1 == repr2 then (undo_stack, true)
                 else (
-                  repr1 := !root_var2 ;
+                  repr1.desc <- root_var2.desc ;
                   ((repr1, desc1) :: undo_stack, true))
             | (Var _, _) | (_, Var _) ->
                 (* Impossible case *)
                 assert false)
       | (Var (_, _), Prim _) -> (
-          let (repr, _root_var) = Internal_term.get_repr term1 in
-          match !repr with
+          let (repr, _root_var) = get_repr term1 in
+          match repr.desc with
           | (IVar | EVar) as desc ->
-              repr := !term2 ;
+              repr.desc <- term2.desc ;
               ((repr, desc) :: undo_stack, true)
           | Prim _ -> unify undo_stack repr term2
           | Var _ ->
               (* Impossible case *)
               assert false)
       | (Prim _, Var (_, _)) -> (
-          let (repr, _root_var) = Internal_term.get_repr term2 in
-          match !repr with
+          let (repr, _root_var) = get_repr term2 in
+          match repr.desc with
           | (IVar | EVar) as desc ->
-              repr := !term1 ;
+              repr.desc <- term1.desc ;
               ((repr, desc) :: undo_stack, true)
           | Prim _ -> unify undo_stack term1 repr
           | Var _ ->
               (* Impossible case *)
               assert false)
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1 := desc2 ;
-          ((term1, Internal_term.IVar) :: undo_stack, true)
+          term1.desc <- desc2 ;
+          ((term1, IVar) :: undo_stack, true)
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2 := desc1 ;
+          term2.desc <- desc1 ;
           ((term2, IVar) :: undo_stack, true)
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
-          let fresh = Internal_term.(Var (-1, ref IVar)) in
-          term1 := fresh ;
-          term2 := fresh ;
+          let fresh = Var (-1, make IVar) in
+          term1.desc <- fresh ;
+          term2.desc <- fresh ;
           ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
       | (EVar, _) | (_, EVar) -> assert false
 
@@ -702,16 +629,15 @@ end = struct
       | (v, t) :: rest ->
           let (undo_stack, success) = unify undo_stack v t in
           if success then (
-            let desc = !v in
-            v := !t ;
+            let desc = v.desc in
+            v.desc <- t.desc ;
             let undo_stack = (v, desc) :: undo_stack in
             unification_subst undo_stack rest)
           else (undo_stack, false)
   end
 
-  let rec check_equality undo_stack (term1 : internal_term)
-      (term2 : internal_term) =
-    match (!term1, !term2) with
+  let rec check_equality undo_stack (term1 : iterm) (term2 : iterm) =
+    match (term1.desc, term2.desc) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
         if P.equal prim1 prim2 then
           check_equality_arrays undo_stack args1 args2 0
@@ -721,16 +647,16 @@ end = struct
     | (Var (_, _), Prim _) -> (undo_stack, false)
     | (Prim _, Var (_, _)) -> (undo_stack, false)
     | (IVar, ((Prim _ | Var _) as desc2)) ->
-        term1 := desc2 ;
-        ((term1, Internal_term.IVar) :: undo_stack, true)
+        term1.desc <- desc2 ;
+        ((term1, IVar) :: undo_stack, true)
     | (((Prim _ | Var _) as desc1), IVar) ->
-        term2 := desc1 ;
+        term2.desc <- desc1 ;
         ((term2, IVar) :: undo_stack, true)
     | (IVar, IVar) ->
         (* The value of the variable does not matter. *)
-        let fresh = Internal_term.(Var (-1, ref IVar)) in
-        term1 := fresh ;
-        term2 := fresh ;
+        let fresh = Var (-1, make IVar) in
+        term1.desc <- fresh ;
+        term2.desc <- fresh ;
         ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
     | (EVar, _) | (_, EVar) -> assert false
 
@@ -744,15 +670,14 @@ end = struct
       else (undo_stack, false)
 
   module Specialize_query = struct
-    let rec check_specialize undo_stack (term1 : internal_term)
-        (term2 : internal_term) =
-      match (!term1, !term2) with
+    let rec check_specialize undo_stack (term1 : iterm) (term2 : iterm) =
+      match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
             check_specialize_arrays undo_stack args1 args2 0
           else (undo_stack, false)
       | (Var (_, repr1), Var (_, repr2)) -> (
-          match !repr1 with
+          match repr1.desc with
           | EVar ->
               (* Variable not instantiated; instantiate it with term2.
                  Two cases:
@@ -765,8 +690,8 @@ end = struct
                    this variable is successfully checked against a term in the index.
                    The cases are:
               *)
-              repr1 := !term2 ;
-              ((repr1, Internal_term.EVar) :: undo_stack, true)
+              repr1.desc <- term2.desc ;
+              ((repr1, EVar) :: undo_stack, true)
           | IVar ->
               (* non-query variables can't be instantiated when specializing *)
               (undo_stack, false)
@@ -778,11 +703,11 @@ end = struct
               (* Variable was was already mapped to a term variable, check equality. *)
               (undo_stack, repr1' == repr2))
       | (Var (_, repr), Prim _) -> (
-          match !repr with
+          match repr.desc with
           | EVar ->
               (* Variable not instantiated; instantiate it with term2. *)
-              repr := !term2 ;
-              ((repr, Internal_term.EVar) :: undo_stack, true)
+              repr.desc <- term2.desc ;
+              ((repr, EVar) :: undo_stack, true)
           | IVar ->
               (* non-query variables can't be instantiated when specializing *)
               (undo_stack, false)
@@ -796,16 +721,16 @@ end = struct
               (undo_stack, false))
       | (Prim _, Var (_, _)) -> (undo_stack, false)
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1 := desc2 ;
+          term1.desc <- desc2 ;
           ((term1, IVar) :: undo_stack, true)
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
-          let fresh = Internal_term.(Var (-1, ref IVar)) in
-          term1 := fresh ;
-          term2 := fresh ;
+          let fresh = Var (-1, make IVar) in
+          term1.desc <- fresh ;
+          term2.desc <- fresh ;
           ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2 := desc1 ;
+          term2.desc <- desc1 ;
           ((term2, IVar) :: undo_stack, true)
       | (EVar, _) | (_, EVar) -> assert false
 
@@ -824,27 +749,26 @@ end = struct
       | (v, t) :: rest ->
           let (undo_stack, success) = check_specialize undo_stack v t in
           if success then (
-            let desc = !v in
-            v := !t ;
+            let desc = v.desc in
+            v.desc <- t.desc ;
             let undo_stack = (v, desc) :: undo_stack in
             check_specialize_subst undo_stack rest)
           else (undo_stack, false)
   end
 
   module Generalize_query = struct
-    let rec check_generalize undo_stack (term1 : internal_term)
-        (term2 : internal_term) =
-      match (!term1, !term2) with
+    let rec check_generalize undo_stack (term1 : iterm) (term2 : iterm) =
+      match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
             check_generalize_arrays undo_stack args1 args2 0
           else (undo_stack, false)
       | (Var (_, repr1), Var (_, repr2)) -> (
-          match !repr2 with
+          match repr2.desc with
           | (IVar | EVar) as desc2 ->
               (* Variable not instantiated; instantiate it with term1. *)
               (* Note that cycles may be introduced here. It's fine. *)
-              repr2 := !term1 ;
+              repr2.desc <- term1.desc ;
               ((repr2, desc2) :: undo_stack, true)
           | Prim _ ->
               (* Variable already instantiated with a prim, cannot generalize
@@ -854,10 +778,10 @@ end = struct
               (* Variable was was already mapped to a term variable, check equality. *)
               (undo_stack, repr2' == repr1))
       | (Prim _, Var (_, repr)) -> (
-          match !repr with
+          match repr.desc with
           | (IVar | EVar) as desc ->
               (* Variable not instantiated; instantiate it with term1. *)
-              repr := !term1 ;
+              repr.desc <- term1.desc ;
               ((repr, desc) :: undo_stack, true)
           | Prim _ ->
               (* Variable was already instantiated with a prim, check equalitye.*)
@@ -867,16 +791,16 @@ end = struct
               (undo_stack, false))
       | (Var (_, _), Prim _) -> (undo_stack, false)
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1 := desc2 ;
+          term1.desc <- desc2 ;
           ((term1, IVar) :: undo_stack, true)
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
-          let fresh = Internal_term.(Var (-1, ref IVar)) in
-          term1 := fresh ;
-          term2 := fresh ;
+          let fresh = Var (-1, make IVar) in
+          term1.desc <- fresh ;
+          term2.desc <- fresh ;
           ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2 := desc1 ;
+          term2.desc <- desc1 ;
           ((term2, IVar) :: undo_stack, true)
       | (EVar, _) | (_, EVar) -> assert false
 
@@ -895,16 +819,16 @@ end = struct
       | (v, t) :: rest ->
           let (undo_stack, success) = check_generalize undo_stack v t in
           if success then (
-            let desc = !v in
-            v := !t ;
+            let desc = v.desc in
+            v.desc <- t.desc ;
             let undo_stack = (v, desc) :: undo_stack in
             check_generalize_subst undo_stack rest)
           else (undo_stack, false)
   end
 
-  let rec iter_node f node (root : internal_term) =
+  let rec iter_node f node (root : iterm) =
     let subst = node.head in
-    List.iter (fun (v, t) -> v := !t) subst ;
+    List.iter (fun (v, t) -> v.desc <- t.desc) subst ;
     (match node.data with None -> () | Some data -> f root data) ;
     Vec.iter (fun node -> iter_node f node root) node.subtrees ;
     reset subst
@@ -933,14 +857,14 @@ end = struct
       (match node.data with None -> () | Some data -> f root data) ;
       Vec.iter (fun node -> iter_query_node f node root qkind) node.subtrees)
     else () ;
-    List.iter (fun (v, d) -> v := d) undo_stack
+    List.iter (fun (v, d) -> v.desc <- d) undo_stack
 
-  let iter_query f (index : 'a t) (qkind : query_kind) (query : internal_term) =
+  let iter_query f (index : 'a t) (qkind : query_kind) (query : iterm) =
     (* [query] is either a Prim or a Var. *)
-    index.root := !query ;
+    index.root.desc <- query.desc ;
     (* The toplevel substitution of the index has domain equal to [index.root]. *)
     Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
-    index.root := IVar
+    index.root.desc <- IVar
 
   let iter_unifiable_transient f index query =
     iter_query f index Unifiable (of_term index query)
@@ -948,11 +872,11 @@ end = struct
   let iter_unifiable f index =
     iter_unifiable_transient (fun term v -> f (to_term term) v) index
 
-  let rec set_query_variables acc (term : Internal_term.t) =
-    match !term with
+  let rec set_query_variables acc term =
+    match term.desc with
     | Var (_, repr) ->
-        repr := EVar ;
-        (repr, Internal_term.IVar) :: acc
+        repr.desc <- EVar ;
+        (repr, IVar) :: acc
     | Prim (_, args) -> Array.fold_left set_query_variables acc args
     | IVar -> acc
     | EVar -> assert false
@@ -961,7 +885,7 @@ end = struct
     let query_term = of_term index query in
     let undo = set_query_variables [] query_term in
     iter_query f index Specialize query_term ;
-    List.iter (fun (v, d) -> v := d) undo
+    List.iter (fun (v, d) -> v.desc <- d) undo
 
   let iter_specialize f index =
     iter_specialize_transient (fun term v -> f (to_term term) v) index
@@ -970,7 +894,7 @@ end = struct
     let query_term = of_term index query in
     let undo = set_query_variables [] query_term in
     iter_query f index Generalize (of_term index query) ;
-    List.iter (fun (v, d) -> v := d) undo
+    List.iter (fun (v, d) -> v.desc <- d) undo
 
   let iter_generalize f index =
     iter_generalize_transient (fun term v -> f (to_term term) v) index
