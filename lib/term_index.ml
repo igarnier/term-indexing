@@ -330,6 +330,36 @@ end = struct
 
   let reset subst = List.iter (fun (v, _) -> v.desc <- IVar) subst
 
+  module Scope = struct
+    type undo_item = Undo of iterm * desc
+
+    type t = { mutable undo : undo_item list }
+
+    let make () = { undo = [] }
+
+    let apply_undo handle =
+      List.iter (fun (Undo (term, desc)) -> term.desc <- desc) handle.undo ;
+      handle.undo <- []
+
+    let set_desc handle term desc =
+      let prev_desc = term.desc in
+      handle.undo <- Undo (term, prev_desc) :: handle.undo ;
+      term.desc <- desc
+    [@@ocaml.inline]
+
+    let undo_scope f =
+      let handle = make () in
+      let finalize () = apply_undo handle in
+      match f handle with
+      | res ->
+          finalize () ;
+          res
+      | exception exn ->
+          finalize () ;
+          raise exn
+    [@@ocaml.inline]
+  end
+
   (* Note: [update_subst] is not robust to sharing sub-terms across inserted terms. *)
   let update_subst term f (tree : 'a t) =
     let rec insert_aux (subst : isubst) (t : 'a node Vec.vector) i =
@@ -344,6 +374,7 @@ end = struct
         reset subst)
       else
         let ({ head; subtrees; data = _ } as ti) = Vec.get t i in
+        let undo_frame = Scope.make () in
         let (general, partial_residual_subst, residual_node) =
           List.fold_left
             (fun (general, residual_subst, residual_node) ((v, t) as binding) ->
@@ -363,8 +394,7 @@ end = struct
               else if top_symbol_disagree v t then (
                 (* Toplevel mismatch. *)
                 let desc = v.desc in
-                v.desc <- IVar ;
-                (* TODO: examine `generalize` and align *)
+                Scope.set_desc undo_frame v IVar ;
                 ( general,
                   (v, make desc) :: residual_subst,
                   binding :: residual_node ))
@@ -403,7 +433,7 @@ end = struct
           (* subst = residual_subst
              re-establish pre-condition for recursive call by reverting the
              state of variables in domain of [partial_residual_subst] *)
-          List.iter (fun (v, t) -> v.desc <- t.desc) partial_residual_subst ;
+          Scope.apply_undo undo_frame ;
           insert_aux subst t (i + 1))
         else
           let residual_subst =
@@ -550,132 +580,124 @@ end = struct
    *)
 
   module Unifiable_query = struct
-    let rec unify undo_stack (term1 : iterm) (term2 : iterm) =
+    let rec unify scope (term1 : iterm) (term2 : iterm) =
       match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
-          if P.equal prim1 prim2 then unify_arrays undo_stack args1 args2 0
-          else (undo_stack, false)
+          if P.equal prim1 prim2 then unify_arrays scope args1 args2 0
+          else false
       | (Var (_, repr_ptr1), Var (_, repr_ptr2)) -> (
-          if repr_ptr1 == repr_ptr2 then (undo_stack, true)
+          if repr_ptr1 == repr_ptr2 then true
           else
             (* term1, term2 are [Var], hence precondition of [get_repr] is satisfied *)
             let (repr1, root_var1) = get_repr term1 in
             let (repr2, root_var2) = get_repr term2 in
             (* invariant: root_var1, root_var2 are Var pointing to Prim or IVar *)
             match (repr1.desc, repr2.desc) with
-            | (Prim _, Prim _) -> unify undo_stack repr1 repr2
-            | (Prim _, ((IVar | EVar) as desc2)) ->
+            | (Prim _, Prim _) -> unify scope repr1 repr2
+            | (Prim _, (IVar | EVar)) ->
                 (* let term2 point to term1 *)
-                repr2.desc <- root_var1.desc ;
-                ((repr2, desc2) :: undo_stack, true)
-            | (((IVar | EVar) as desc1), Prim _) ->
+                Scope.set_desc scope repr2 root_var1.desc ;
+                true
+            | ((IVar | EVar), Prim _) ->
                 (* let term1 point to term2 *)
-                repr1.desc <- root_var2.desc ;
-                ((repr1, desc1) :: undo_stack, true)
-            | (((IVar | EVar) as desc1), (IVar | EVar)) ->
+                Scope.set_desc scope repr1 root_var2.desc ;
+                true
+            | ((IVar | EVar), (IVar | EVar)) ->
                 (* It may be the case that root_var1 == root_var2, if we
                    perform the assignment then we'll introduce a cycle. *)
-                if repr1 == repr2 then (undo_stack, true)
+                if repr1 == repr2 then true
                 else (
-                  repr1.desc <- root_var2.desc ;
-                  ((repr1, desc1) :: undo_stack, true))
+                  Scope.set_desc scope repr1 root_var2.desc ;
+                  true)
             | (Var _, _) | (_, Var _) ->
                 (* Impossible case *)
                 assert false)
       | (Var (_, _), Prim _) -> (
           let (repr, _root_var) = get_repr term1 in
           match repr.desc with
-          | (IVar | EVar) as desc ->
-              repr.desc <- term2.desc ;
-              ((repr, desc) :: undo_stack, true)
-          | Prim _ -> unify undo_stack repr term2
+          | IVar | EVar ->
+              Scope.set_desc scope repr term2.desc ;
+              true
+          | Prim _ -> unify scope repr term2
           | Var _ ->
               (* Impossible case *)
               assert false)
       | (Prim _, Var (_, _)) -> (
           let (repr, _root_var) = get_repr term2 in
           match repr.desc with
-          | (IVar | EVar) as desc ->
-              repr.desc <- term1.desc ;
-              ((repr, desc) :: undo_stack, true)
-          | Prim _ -> unify undo_stack term1 repr
+          | IVar | EVar ->
+              Scope.set_desc scope repr term1.desc ;
+              true
+          | Prim _ -> unify scope term1 repr
           | Var _ ->
               (* Impossible case *)
               assert false)
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1.desc <- desc2 ;
-          ((term1, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 desc2 ;
+          true
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2.desc <- desc1 ;
-          ((term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term2 desc1 ;
+          true
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
           let fresh = Var (-1, make IVar) in
-          term1.desc <- fresh ;
-          term2.desc <- fresh ;
-          ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 fresh ;
+          Scope.set_desc scope term2 fresh ;
+          true
       | (EVar, _) | (_, EVar) -> assert false
 
-    and unify_arrays undo_stack args1 args2 i =
-      if i = Array.length args1 then (undo_stack, true)
+    and unify_arrays scope args1 args2 i =
+      if i = Array.length args1 then true
       else
-        let (undo_stack, success) = unify undo_stack args1.(i) args2.(i) in
-        if success then unify_arrays undo_stack args1 args2 (i + 1)
-        else (undo_stack, false)
+        let success = unify scope args1.(i) args2.(i) in
+        if success then unify_arrays scope args1 args2 (i + 1) else false
 
-    let rec unification_subst undo_stack subst =
+    let rec unification_subst scope subst =
       match subst with
-      | [] -> (undo_stack, true)
+      | [] -> true
       | (v, t) :: rest ->
-          let (undo_stack, success) = unify undo_stack v t in
+          let success = unify scope v t in
           if success then (
-            let desc = v.desc in
-            v.desc <- t.desc ;
-            let undo_stack = (v, desc) :: undo_stack in
-            unification_subst undo_stack rest)
-          else (undo_stack, false)
+            Scope.set_desc scope v t.desc ;
+            unification_subst scope rest)
+          else false
   end
 
-  let rec check_equality undo_stack (term1 : iterm) (term2 : iterm) =
+  let rec check_equality scope (term1 : iterm) (term2 : iterm) =
     match (term1.desc, term2.desc) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
-        if P.equal prim1 prim2 then
-          check_equality_arrays undo_stack args1 args2 0
-        else (undo_stack, false)
-    | (Var (_, repr1), Var (_, repr2)) ->
-        if repr1 == repr2 then (undo_stack, true) else (undo_stack, false)
-    | (Var (_, _), Prim _) -> (undo_stack, false)
-    | (Prim _, Var (_, _)) -> (undo_stack, false)
+        if P.equal prim1 prim2 then check_equality_arrays scope args1 args2 0
+        else false
+    | (Var (_, repr1), Var (_, repr2)) -> if repr1 == repr2 then true else false
+    | (Var (_, _), Prim _) -> false
+    | (Prim _, Var (_, _)) -> false
     | (IVar, ((Prim _ | Var _) as desc2)) ->
-        term1.desc <- desc2 ;
-        ((term1, IVar) :: undo_stack, true)
+        Scope.set_desc scope term1 desc2 ;
+        true
     | (((Prim _ | Var _) as desc1), IVar) ->
-        term2.desc <- desc1 ;
-        ((term2, IVar) :: undo_stack, true)
+        Scope.set_desc scope term2 desc1 ;
+        true
     | (IVar, IVar) ->
         (* The value of the variable does not matter. *)
         let fresh = Var (-1, make IVar) in
-        term1.desc <- fresh ;
-        term2.desc <- fresh ;
-        ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
+        Scope.set_desc scope term1 fresh ;
+        Scope.set_desc scope term2 fresh ;
+        true
     | (EVar, _) | (_, EVar) -> assert false
 
-  and check_equality_arrays undo_stack args1 args2 i =
-    if i = Array.length args1 then (undo_stack, true)
+  and check_equality_arrays scope args1 args2 i =
+    if i = Array.length args1 then true
     else
-      let (undo_stack, success) =
-        check_equality undo_stack args1.(i) args2.(i)
-      in
-      if success then check_equality_arrays undo_stack args1 args2 (i + 1)
-      else (undo_stack, false)
+      let success = check_equality scope args1.(i) args2.(i) in
+      if success then check_equality_arrays scope args1 args2 (i + 1) else false
 
   module Specialize_query = struct
-    let rec check_specialize undo_stack (term1 : iterm) (term2 : iterm) =
+    let rec check_specialize scope (term1 : iterm) (term2 : iterm) =
       match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
-            check_specialize_arrays undo_stack args1 args2 0
-          else (undo_stack, false)
+            check_specialize_arrays scope args1 args2 0
+          else false
       | (Var (_, repr1), Var (_, repr2)) -> (
           match repr1.desc with
           | EVar ->
@@ -690,140 +712,132 @@ end = struct
                    this variable is successfully checked against a term in the index.
                    The cases are:
               *)
-              repr1.desc <- term2.desc ;
-              ((repr1, EVar) :: undo_stack, true)
+              Scope.set_desc scope repr1 term2.desc ;
+              true
           | IVar ->
               (* non-query variables can't be instantiated when specializing *)
-              (undo_stack, false)
+              false
           | Prim _ ->
               (* Variable already instantiated with a prim, cannot specialize
                  to another variable. *)
-              (undo_stack, false)
+              false
           | Var (_, repr1') ->
               (* Variable was was already mapped to a term variable, check equality. *)
-              (undo_stack, repr1' == repr2))
+              repr1' == repr2)
       | (Var (_, repr), Prim _) -> (
           match repr.desc with
           | EVar ->
               (* Variable not instantiated; instantiate it with term2. *)
-              repr.desc <- term2.desc ;
-              ((repr, EVar) :: undo_stack, true)
+              Scope.set_desc scope repr term2.desc ;
+              true
           | IVar ->
               (* non-query variables can't be instantiated when specializing *)
-              (undo_stack, false)
+              false
           | Prim _ ->
               (* Variable was already instantiated with a prim, check
                  that instances properly specialize. Note that [repr] is not
                  a query term and may contain [IVar] and [Var] nodes. *)
-              check_equality undo_stack repr term2
+              check_equality scope repr term2
           | Var _ ->
               (* Variable was was already mapped to a term variable *)
-              (undo_stack, false))
-      | (Prim _, Var (_, _)) -> (undo_stack, false)
+              false)
+      | (Prim _, Var (_, _)) -> false
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1.desc <- desc2 ;
-          ((term1, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 desc2 ;
+          true
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
           let fresh = Var (-1, make IVar) in
-          term1.desc <- fresh ;
-          term2.desc <- fresh ;
-          ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 fresh ;
+          Scope.set_desc scope term2 fresh ;
+          true
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2.desc <- desc1 ;
-          ((term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term2 desc1 ;
+          true
       | (EVar, _) | (_, EVar) -> assert false
 
-    and check_specialize_arrays undo_stack args1 args2 i =
-      if i = Array.length args1 then (undo_stack, true)
+    and check_specialize_arrays scope args1 args2 i =
+      if i = Array.length args1 then true
       else
-        let (undo_stack, success) =
-          check_specialize undo_stack args1.(i) args2.(i)
-        in
-        if success then check_specialize_arrays undo_stack args1 args2 (i + 1)
-        else (undo_stack, false)
+        let success = check_specialize scope args1.(i) args2.(i) in
+        if success then check_specialize_arrays scope args1 args2 (i + 1)
+        else false
 
-    let rec check_specialize_subst undo_stack subst =
+    let rec check_specialize_subst scope subst =
       match subst with
-      | [] -> (undo_stack, true)
+      | [] -> true
       | (v, t) :: rest ->
-          let (undo_stack, success) = check_specialize undo_stack v t in
+          let success = check_specialize scope v t in
           if success then (
-            let desc = v.desc in
-            v.desc <- t.desc ;
-            let undo_stack = (v, desc) :: undo_stack in
-            check_specialize_subst undo_stack rest)
-          else (undo_stack, false)
+            Scope.set_desc scope v t.desc ;
+            check_specialize_subst scope rest)
+          else false
   end
 
   module Generalize_query = struct
-    let rec check_generalize undo_stack (term1 : iterm) (term2 : iterm) =
+    let rec check_generalize scope (term1 : iterm) (term2 : iterm) =
       match (term1.desc, term2.desc) with
       | (Prim (prim1, args1), Prim (prim2, args2)) ->
           if P.equal prim1 prim2 then
-            check_generalize_arrays undo_stack args1 args2 0
-          else (undo_stack, false)
+            check_generalize_arrays scope args1 args2 0
+          else false
       | (Var (_, repr1), Var (_, repr2)) -> (
           match repr2.desc with
-          | (IVar | EVar) as desc2 ->
+          | IVar | EVar ->
               (* Variable not instantiated; instantiate it with term1. *)
               (* Note that cycles may be introduced here. It's fine. *)
-              repr2.desc <- term1.desc ;
-              ((repr2, desc2) :: undo_stack, true)
+              Scope.set_desc scope repr2 term1.desc ;
+              true
           | Prim _ ->
               (* Variable already instantiated with a prim, cannot generalize
                  to a distinct variable. *)
-              (undo_stack, false)
+              false
           | Var (_, repr2') ->
               (* Variable was was already mapped to a term variable, check equality. *)
-              (undo_stack, repr2' == repr1))
+              repr2' == repr1)
       | (Prim _, Var (_, repr)) -> (
           match repr.desc with
-          | (IVar | EVar) as desc ->
+          | IVar | EVar ->
               (* Variable not instantiated; instantiate it with term1. *)
-              repr.desc <- term1.desc ;
-              ((repr, desc) :: undo_stack, true)
+              Scope.set_desc scope repr term1.desc ;
+              true
           | Prim _ ->
               (* Variable was already instantiated with a prim, check equalitye.*)
-              check_equality undo_stack term1 repr
+              check_equality scope term1 repr
           | Var _ ->
               (* Variable was was already mapped to a query variable. *)
-              (undo_stack, false))
-      | (Var (_, _), Prim _) -> (undo_stack, false)
+              false)
+      | (Var (_, _), Prim _) -> false
       | (IVar, ((Prim _ | Var _) as desc2)) ->
-          term1.desc <- desc2 ;
-          ((term1, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 desc2 ;
+          true
       | (IVar, IVar) ->
           (* The value of the variable does not matter. *)
           let fresh = Var (-1, make IVar) in
-          term1.desc <- fresh ;
-          term2.desc <- fresh ;
-          ((term1, IVar) :: (term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term1 fresh ;
+          Scope.set_desc scope term2 fresh ;
+          true
       | (((Prim _ | Var _) as desc1), IVar) ->
-          term2.desc <- desc1 ;
-          ((term2, IVar) :: undo_stack, true)
+          Scope.set_desc scope term2 desc1 ;
+          true
       | (EVar, _) | (_, EVar) -> assert false
 
-    and check_generalize_arrays undo_stack args1 args2 i =
-      if i = Array.length args1 then (undo_stack, true)
+    and check_generalize_arrays scope args1 args2 i =
+      if i = Array.length args1 then true
       else
-        let (undo_stack, success) =
-          check_generalize undo_stack args1.(i) args2.(i)
-        in
-        if success then check_generalize_arrays undo_stack args1 args2 (i + 1)
-        else (undo_stack, false)
+        let success = check_generalize scope args1.(i) args2.(i) in
+        if success then check_generalize_arrays scope args1 args2 (i + 1)
+        else false
 
-    let rec check_generalize_subst undo_stack subst =
+    let rec check_generalize_subst scope subst =
       match subst with
-      | [] -> (undo_stack, true)
+      | [] -> true
       | (v, t) :: rest ->
-          let (undo_stack, success) = check_generalize undo_stack v t in
+          let success = check_generalize scope v t in
           if success then (
-            let desc = v.desc in
-            v.desc <- t.desc ;
-            let undo_stack = (v, desc) :: undo_stack in
-            check_generalize_subst undo_stack rest)
-          else (undo_stack, false)
+            Scope.set_desc scope v t.desc ;
+            check_generalize_subst scope rest)
+          else false
   end
 
   let rec iter_node f node (root : iterm) =
@@ -847,24 +861,24 @@ end = struct
 
   (* precondition: the domain of node.head has no [IVar] *)
   let rec iter_query_node f node root qkind =
-    let (undo_stack, success) =
+    Scope.undo_scope @@ fun scope ->
+    let success =
       match qkind with
-      | Unifiable -> Unifiable_query.unification_subst [] node.head
-      | Specialize -> Specialize_query.check_specialize_subst [] node.head
-      | Generalize -> Generalize_query.check_generalize_subst [] node.head
+      | Unifiable -> Unifiable_query.unification_subst scope node.head
+      | Specialize -> Specialize_query.check_specialize_subst scope node.head
+      | Generalize -> Generalize_query.check_generalize_subst scope node.head
     in
     if success then (
       (match node.data with None -> () | Some data -> f root data) ;
       Vec.iter (fun node -> iter_query_node f node root qkind) node.subtrees)
-    else () ;
-    List.iter (fun (v, d) -> v.desc <- d) undo_stack
+    else ()
 
   let iter_query f (index : 'a t) (qkind : query_kind) (query : iterm) =
     (* [query] is either a Prim or a Var. *)
-    index.root.desc <- query.desc ;
+    Scope.undo_scope @@ fun scope ->
+    Scope.set_desc scope index.root query.desc ;
     (* The toplevel substitution of the index has domain equal to [index.root]. *)
-    Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes ;
-    index.root.desc <- IVar
+    Vec.iter (fun node -> iter_query_node f node index.root qkind) index.nodes
 
   let iter_unifiable_transient f index query =
     iter_query f index Unifiable (of_term index query)
@@ -872,29 +886,27 @@ end = struct
   let iter_unifiable f index =
     iter_unifiable_transient (fun term v -> f (to_term term) v) index
 
-  let rec set_query_variables acc term =
+  let rec set_query_variables scope term =
     match term.desc with
-    | Var (_, repr) ->
-        repr.desc <- EVar ;
-        (repr, IVar) :: acc
-    | Prim (_, args) -> Array.fold_left set_query_variables acc args
-    | IVar -> acc
+    | Var (_, repr) -> Scope.set_desc scope repr EVar
+    | Prim (_, args) -> Array.iter (fun t -> set_query_variables scope t) args
+    | IVar -> ()
     | EVar -> assert false
 
   let iter_specialize_transient f index query =
     let query_term = of_term index query in
-    let undo = set_query_variables [] query_term in
-    iter_query f index Specialize query_term ;
-    List.iter (fun (v, d) -> v.desc <- d) undo
+    Scope.undo_scope @@ fun scope ->
+    set_query_variables scope query_term ;
+    iter_query f index Specialize query_term
 
   let iter_specialize f index =
     iter_specialize_transient (fun term v -> f (to_term term) v) index
 
   let iter_generalize_transient f index query =
     let query_term = of_term index query in
-    let undo = set_query_variables [] query_term in
-    iter_query f index Generalize (of_term index query) ;
-    List.iter (fun (v, d) -> v.desc <- d) undo
+    Scope.undo_scope @@ fun scope ->
+    set_query_variables scope query_term ;
+    iter_query f index Generalize (of_term index query)
 
   let iter_generalize f index =
     iter_generalize_transient (fun term v -> f (to_term term) v) index
