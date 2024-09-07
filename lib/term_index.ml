@@ -3,6 +3,7 @@ module Vec = Containers.Vector
 let debug_mode = false
 
 module IS = Set.Make (Int)
+module PB = PrintBox
 
 module Make
     (P : Intf.Signature)
@@ -75,23 +76,23 @@ end = struct
 
   module Pp = struct
     let iterm_to_print_tree term =
-      let rec to_tree : IS.t -> iterm -> PrintBox.t =
+      let rec to_tree : IS.t -> iterm -> PB.t =
        fun set term ->
         if IS.mem (uid term) set then
-          Format.kasprintf PrintBox.text "CYCLE(%d)" (uid term)
+          Format.kasprintf PB.text "CYCLE(%d)" (uid term)
         else
           let set = IS.add (uid term) set in
           match term.desc with
           | Prim (prim, subtrees) ->
-              PrintBox.tree
-                (Format.kasprintf PrintBox.text "%d:%a" (uid term) P.pp prim)
+              PB.tree
+                (Format.kasprintf PB.text "%d:%a" (uid term) P.pp prim)
                 (Array.to_list (Array.map (to_tree set) subtrees))
           | Var (v, repr) ->
-              PrintBox.tree
-                (Format.kasprintf PrintBox.text "%d:V(%d)" (uid term) v)
+              PB.tree
+                (Format.kasprintf PB.text "%d:V(%d)" (uid term) v)
                 [to_tree set repr]
-          | IVar -> PrintBox.asprintf "%d:ivar" (uid term)
-          | EVar -> PrintBox.asprintf "%d:evar" (uid term)
+          | IVar -> PB.asprintf "%d:ivar" (uid term)
+          | EVar -> PB.asprintf "%d:evar" (uid term)
       in
       to_tree IS.empty term
 
@@ -100,13 +101,13 @@ end = struct
       PrintBox_text.pp fmtr tree
 
     let box_of_data pp_data data =
-      let open PrintBox in
+      let open PB in
       match data with
       | None -> text "<>"
       | Some data -> text (Format.asprintf "%a" pp_data data)
 
     let box_of_subst subst =
-      let open PrintBox in
+      let open PB in
       frame
       @@ vlist
            ~bars:true
@@ -116,7 +117,7 @@ end = struct
               subst)
 
     let box_of_subst_with_data pp_data subst data =
-      let open PrintBox in
+      let open PB in
       frame
       @@ hlist
            [ vlist
@@ -130,7 +131,7 @@ end = struct
     let pp_subst fmtr subst = PrintBox_text.pp fmtr (box_of_subst subst)
 
     let rec to_box pp_data node =
-      let open PrintBox in
+      let open PB in
       tree
         ~indent:4
         (hlist
@@ -139,7 +140,7 @@ end = struct
         (List.map (to_box pp_data) (Vec.to_list node.subtrees))
 
     and box_of_subtrees pp_data vec =
-      let open PrintBox in
+      let open PB in
       align
         ~h:`Center
         ~v:`Center
