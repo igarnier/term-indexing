@@ -47,10 +47,51 @@ end = struct
 
   type var_table = (int, iterm) Hashtbl.t
 
-  type isubst = (iterm * iterm) list
+  module Subst : sig
+    type t
+
+    val empty : unit -> t
+
+    val is_empty : t -> bool
+
+    val push : iterm -> iterm -> t -> t
+
+    val reset : t -> unit
+
+    val assign : t -> unit
+
+    val fold : ('a -> iterm -> iterm -> 'a) -> 'a -> t -> 'a
+
+    val for_all : (iterm -> iterm -> bool) -> t -> bool
+
+    val iter_while : (iterm -> iterm -> bool) -> t -> bool
+
+    val to_bindings : t -> (iterm * iterm) list
+  end = struct
+    type t = (iterm * iterm) list
+
+    let empty () = []
+
+    let is_empty = function [] -> true | _ -> false
+
+    let push v t subst = (v, t) :: subst
+
+    let reset subst = List.iter (fun (v, _) -> v.desc <- IVar) subst
+
+    let assign subst = List.iter (fun (v, t) -> v.desc <- t.desc) subst
+
+    let fold f acc subst =
+      List.fold_left (fun acc (v, t) -> f acc v t) acc subst
+
+    let for_all f subst = List.for_all (fun (v, t) -> f v t) subst
+
+    let iter_while f subst = List.for_all (fun (v, t) -> f v t) subst
+
+    let to_bindings = Fun.id
+  end
 
   type 'a node =
-    { mutable head : isubst;
+    { mutable head : Subst.t;
       mutable subtrees : 'a node Vec.vector;
       mutable data : 'a option
     }
@@ -114,7 +155,7 @@ end = struct
            (List.map
               (fun (v, t) ->
                 hlist [iterm_to_print_tree v; iterm_to_print_tree t])
-              subst)
+              (Subst.to_bindings subst))
 
     let box_of_subst_with_data pp_data subst data =
       let open PB in
@@ -125,7 +166,7 @@ end = struct
                (List.map
                   (fun (v, t) ->
                     hlist [iterm_to_print_tree v; iterm_to_print_tree t])
-                  subst);
+                  (Subst.to_bindings subst));
              box_of_data pp_data data ]
 
     let pp_subst fmtr subst = PrintBox_text.pp fmtr (box_of_subst subst)
@@ -266,14 +307,14 @@ end = struct
 
   let of_term index term = iterm_of_term index.var_table term
 
-  let subst_is_empty = function [] -> true | _ -> false
-
   let generalize subst_term node_term residual_subst residual_node =
-    let residual_subst = (node_term, subst_term) :: residual_subst in
+    let residual_subst = Subst.push node_term subst_term residual_subst in
     (* We need to wrap the term pointed to by [node_term] in a fresh ref cell;
        [node_term] will be pointing to either the [subst_term] or the fresh cell
        depending on which term is matched. *)
-    let residual_node = (node_term, make node_term.desc) :: residual_node in
+    let residual_node =
+      Subst.push node_term (make node_term.desc) residual_node
+    in
     node_term.desc <- IVar ;
     (residual_subst, residual_node)
 
@@ -285,7 +326,7 @@ end = struct
      Post-condition: generalized sub-terms of [node_term] are set to [IVar] and
      appear in the domain of both [residual_subst] and [residual_node] *)
   let rec mscg (subst_term : iterm) (node_term : iterm)
-      (residual_subst : isubst) (residual_node : isubst) : isubst * isubst =
+      (residual_subst : Subst.t) (residual_node : Subst.t) : Subst.t * Subst.t =
     match (subst_term.desc, node_term.desc) with
     | (Prim (prim1, args1), Prim (prim2, args2)) ->
         if P.equal prim1 prim2 then
@@ -300,7 +341,7 @@ end = struct
     | ((Prim _ | Var _), IVar) ->
         (* [t1] is a variable or term, [t2] is an indicator variable *)
         (* [node_term] is already the mscg *)
-        ((node_term, subst_term) :: residual_subst, residual_node)
+        (Subst.push node_term subst_term residual_subst, residual_node)
     | (EVar, _) | (_, EVar) -> assert false
 
   and mscg_array args1 args2 residual_subst residual_node i =
@@ -328,8 +369,6 @@ end = struct
 
   let create () =
     { nodes = Vec.create (); root = make IVar; var_table = Hashtbl.create 11 }
-
-  let reset subst = List.iter (fun (v, _) -> v.desc <- IVar) subst
 
   module Scope = struct
     type undo_item = Undo of iterm * desc
@@ -363,7 +402,7 @@ end = struct
 
   (* Note: [update_subst] is not robust to sharing sub-terms across inserted terms. *)
   let update_subst term f (tree : 'a t) =
-    let rec insert_aux (subst : isubst) (t : 'a node Vec.vector) i =
+    let rec insert_aux (subst : Subst.t) (t : 'a node Vec.vector) i =
       (* Precondition: domain of [subst] is set *)
       (* Postcondition: domain of [subst] is unset *)
       (* Postcondition: domain of [(Vec.get t i).head] is unset *)
@@ -372,13 +411,13 @@ end = struct
         Vec.push
           t
           { head = subst; subtrees = Vec.create (); data = Some (f None) } ;
-        reset subst)
+        Subst.reset subst)
       else
         let ({ head; subtrees; data = _ } as ti) = Vec.get t i in
         let undo_frame = Scope.make () in
         let (general, partial_residual_subst, residual_node) =
-          List.fold_left
-            (fun (general, residual_subst, residual_node) ((v, t) as binding) ->
+          Subst.fold
+            (fun (general, residual_subst, residual_node) v t ->
               (*
                   the pair [(v, t)] is a pair of references to term descriptors:
                     v = ref desc1
@@ -391,22 +430,22 @@ end = struct
               assert (not (is_ivar t)) ;
               if is_ivar v then
                 (* variable is unset hence not in domain of [subst], binding goes to [residual_node] *)
-                (general, residual_subst, binding :: residual_node)
+                (general, residual_subst, Subst.push v t residual_node)
               else if top_symbol_disagree v t then (
                 (* Toplevel mismatch. *)
                 let desc = v.desc in
                 Scope.set_desc undo_frame v IVar ;
                 ( general,
-                  (v, make desc) :: residual_subst,
-                  binding :: residual_node ))
+                  Subst.push v (make desc) residual_subst,
+                  Subst.push v t residual_node ))
               else
                 let (residual_subst, residual_node) =
                   mscg v t residual_subst residual_node
                 in
                 let () = assert (not (is_ivar t)) in
                 v.desc <- IVar ;
-                ((v, t) :: general, residual_subst, residual_node))
-            ([], [], [])
+                (Subst.push v t general, residual_subst, residual_node))
+            (Subst.empty (), Subst.empty (), Subst.empty ())
             head
         in
         (*
@@ -419,13 +458,12 @@ end = struct
         let () =
           if debug_mode then (
             assert (
-              List.for_all (fun (v, t) -> is_ivar v && not (is_ivar t)) general) ;
-            assert (
-              List.for_all (fun (v, t) -> is_ivar v && not (is_ivar t)) head))
+              Subst.for_all (fun v t -> is_ivar v && not (is_ivar t)) general) ;
+            assert (Subst.for_all (fun v t -> is_ivar v && not (is_ivar t)) head))
           else ()
         in
 
-        if subst_is_empty general then (
+        if Subst.is_empty general then (
           (* [subst] is incompatible with [head], try next sibling
              TODO: we might optimize the search by indexing trees by their head constructor
              for a particular variable. This is reminiscent of a trie. The heuristic to choose
@@ -438,21 +476,21 @@ end = struct
           insert_aux subst t (i + 1))
         else
           let residual_subst =
-            List.fold_left
-              (fun residual_subst ((v, _t) as binding) ->
-                if not (is_ivar v) then binding :: residual_subst
+            Subst.fold
+              (fun residual_subst v t ->
+                if not (is_ivar v) then Subst.push v t residual_subst
                 else residual_subst)
               partial_residual_subst
               subst
           in
-          let () = List.iter (fun (v, t) -> v.desc <- t.desc) residual_subst in
-          if subst_is_empty residual_subst && subst_is_empty residual_node then
+          let () = Subst.assign residual_subst in
+          if Subst.is_empty residual_subst && Subst.is_empty residual_node then
             (* exact match: general = head *)
             (* At this point:
                - [general] domain is unset, [head = general] and [subst = general] hence
                  post-condition is satisfied *)
             ti.data <- Some (f ti.data)
-          else if subst_is_empty residual_subst then (
+          else if Subst.is_empty residual_subst then (
             (* Here, [subst = general], [head = residual_node \circ general]
                it follows that head refines [subst].
             *)
@@ -465,8 +503,8 @@ end = struct
                    }
                 |] ;
             ti.data <- None ;
-            reset residual_node)
-          else if subst_is_empty residual_node then
+            Subst.reset residual_node)
+          else if Subst.is_empty residual_node then
             (* Here, [head = general], [subst = residual_subst \circ general]
                it follows that [subst] refines [head].
             *)
@@ -492,11 +530,11 @@ end = struct
               { head = general; subtrees = new_node_children; data = None }
             in
             Vec.set t i new_node ;
-            reset residual_node ;
-            reset residual_subst)
+            Subst.reset residual_node ;
+            Subst.reset residual_subst)
     in
     tree.root.desc <- term.desc ;
-    insert_aux [(tree.root, term)] tree.nodes 0
+    insert_aux (Subst.push tree.root term (Subst.empty ())) tree.nodes 0
 
   module Stats = struct
     [@@@ocaml.warning "-32"]
@@ -522,7 +560,7 @@ end = struct
   end
 
   module Internal_for_tests = struct
-    type subst = isubst
+    type subst = Subst.t
 
     let pp_subst = pp_subst
 
@@ -533,7 +571,7 @@ end = struct
     exception Trivial_subst of subst
 
     let rec all_unset_node node =
-      List.for_all (fun (v, _) -> is_ivar v) node.head
+      Subst.for_all (fun v _ -> is_ivar v) node.head
       && Vec.for_all all_unset_node node.subtrees
 
     let all_unset (index : 'a t) : bool = Vec.for_all all_unset_node index.nodes
@@ -553,8 +591,11 @@ end = struct
 
     let rec well_scoped_node node in_scope =
       let subst = node.head in
-      let in_scope = well_scoped_subst subst in_scope IS.empty in
-      if not (non_trivial subst) then raise (Trivial_subst subst) ;
+      let in_scope =
+        well_scoped_subst (Subst.to_bindings subst) in_scope IS.empty
+      in
+      if not (non_trivial (Subst.to_bindings subst)) then
+        raise (Trivial_subst subst) ;
       Vec.iter (fun node -> well_scoped_node node in_scope) node.subtrees
 
     let well_scoped index =
@@ -653,15 +694,14 @@ end = struct
         let success = unify scope args1.(i) args2.(i) in
         if success then unify_arrays scope args1 args2 (i + 1) else false
 
-    let rec unification_subst scope subst =
-      match subst with
-      | [] -> true
-      | (v, t) :: rest ->
-          let success = unify scope v t in
-          if success then (
+    let unification_subst scope subst =
+      Subst.iter_while
+        (fun v t ->
+          if unify scope v t then (
             Scope.set_desc scope v t.desc ;
-            unification_subst scope rest)
-          else false
+            true)
+          else false)
+        subst
   end
 
   let rec check_equality scope (term1 : iterm) (term2 : iterm) =
@@ -764,15 +804,14 @@ end = struct
         if success then check_specialize_arrays scope args1 args2 (i + 1)
         else false
 
-    let rec check_specialize_subst scope subst =
-      match subst with
-      | [] -> true
-      | (v, t) :: rest ->
-          let success = check_specialize scope v t in
-          if success then (
+    let check_specialize_subst scope subst =
+      Subst.iter_while
+        (fun v t ->
+          if check_specialize scope v t then (
             Scope.set_desc scope v t.desc ;
-            check_specialize_subst scope rest)
-          else false
+            true)
+          else false)
+        subst
   end
 
   module Generalize_query = struct
@@ -830,23 +869,21 @@ end = struct
         if success then check_generalize_arrays scope args1 args2 (i + 1)
         else false
 
-    let rec check_generalize_subst scope subst =
-      match subst with
-      | [] -> true
-      | (v, t) :: rest ->
-          let success = check_generalize scope v t in
-          if success then (
+    let check_generalize_subst scope subst =
+      Subst.iter_while
+        (fun v t ->
+          if check_generalize scope v t then (
             Scope.set_desc scope v t.desc ;
-            check_generalize_subst scope rest)
-          else false
+            true)
+          else false)
+        subst
   end
 
   let rec iter_node f node (root : iterm) =
-    let subst = node.head in
-    List.iter (fun (v, t) -> v.desc <- t.desc) subst ;
+    Subst.assign node.head ;
     (match node.data with None -> () | Some data -> f root data) ;
     Vec.iter (fun node -> iter_node f node root) node.subtrees ;
-    reset subst
+    Subst.reset node.head
 
   let iter_transient f (index : 'a t) =
     Vec.iter (fun node -> iter_node f node index.root) index.nodes
