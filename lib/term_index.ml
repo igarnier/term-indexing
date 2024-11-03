@@ -85,7 +85,10 @@ end = struct
 
     let for_all f subst = List.for_all (fun (v, t) -> f v t) subst
 
-    let iter_while f subst = List.for_all (fun (v, t) -> f v t) subst
+    let rec iter_while f subst =
+      match subst with
+      | [] -> true
+      | (v, t) :: rest -> if f v t then iter_while f rest else false
 
     let to_bindings = Fun.id
   end
@@ -842,7 +845,7 @@ end = struct
               Scope.set_desc scope repr term1.desc ;
               true
           | Prim _ ->
-              (* Variable was already instantiated with a prim, check equalitye.*)
+              (* Variable was already instantiated with a prim, check equality.*)
               check_equality scope term1 repr
           | Var _ ->
               (* Variable was was already mapped to a query variable. *)
