@@ -22,6 +22,7 @@
   (printbox (>= 0.11))
   (printbox-text (>= 0.9.0))
   (fmt (>= 0.9.0))
+  (term-tools (and (>= 0.0.2) :with-test))
   (alcotest (and (>= 0.8.1) :with-test))
   (qcheck (and (>= 0.21) :with-test))
   (qcheck-core (and (>= 0.21) :with-test))

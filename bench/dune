@@ -1,4 +1,4 @@
 (executables
- (names bench zbench)
- (libraries term_indexing unix fmt)
+ (names bench)
+ (libraries term_indexing term-tools unix fmt)
 )

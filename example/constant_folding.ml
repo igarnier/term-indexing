@@ -18,7 +18,7 @@ module Prim = struct
   let arity = function Add | Mul -> 2 | Neg -> 1 | Float _ -> 0
 end
 
-module TI = Term_indexing.Make (Prim)
+module TI = Term_tools.Make (Prim)
 open TI
 
 let add x y = Term.prim Add [| x; y |]
@@ -33,120 +33,9 @@ let var s = Term.var s
 
 let t = add (var 0) (mul (var 1) (var 1))
 
-(* example: zipper, folding *)
-
-let zipper = Zipper.of_term t
-
-let left = Zipper.move_at zipper 0 |> Option.get
-
-let () = Fmt.pr "left: %a@." Term.pp (Zipper.cursor left)
-
-let right = Zipper.move_at zipper 1 |> Option.get
-
-let () = Fmt.pr "right: %a@." Term.pp (Zipper.cursor right)
-
-let rewritten = Zipper.to_term (Zipper.replace (float 42.0) right)
-
-let () = Fmt.pr "rewritten: %a@." Term.pp rewritten
-
-let all_subterms =
-  Zipper.fold (fun z acc -> Zipper.cursor z :: acc) (Zipper.of_term t) []
-
-let () = Fmt.pr "%a@." (Fmt.Dump.list Term.pp) all_subterms
-
-let all_variables =
-  Zipper.fold_variables (fun v _z acc -> v :: acc) (Zipper.of_term t) []
-
-let () = Fmt.pr "%a@." Fmt.Dump.(list Fmt.int) all_variables
-
-(* Example: rewriting *)
-
-let float_patt =
-  Pattern.prim_pred (function Float _ -> true | _ -> false) Pattern.list_empty
-
-let add_patt = Pattern.(prim Prim.Add (float_patt @. float_patt @. list_empty))
-
-let mul_patt = Pattern.(prim Prim.Mul (float_patt @. float_patt @. list_empty))
-
-let neg_patt = Pattern.(prim Prim.Neg (float_patt @. list_empty))
-
-let get_float (term : Term.t) : float option =
-  Term.destruct
-    (fun prim _ -> match prim with Prim.Float f -> Some f | _ -> None)
-    (fun _ -> None)
-    term
-
-let reduce (term : Term.t) : Term.t option =
-  Term.destruct
-    (fun prim operands ->
-      match (prim, operands) with
-      | ((Add | Mul), [| l; r |]) ->
-          Option.bind (get_float l) @@ fun l ->
-          Option.bind (get_float r) @@ fun r ->
-          Option.some
-            (match prim with
-            | Add -> float (l +. r)
-            | Mul -> float (l *. r)
-            | _ -> assert false)
-      | (Neg, [| x |]) ->
-          Option.bind (get_float x) @@ fun x -> Option.some (float (-.x))
-      | _ -> Option.some term)
-    (fun _ -> Option.some term)
-    term
-
-let rec rewrite_until_fixpoint term =
-  let matches = Pattern.first_match [add_patt; mul_patt; neg_patt] term in
-  match matches with
-  | [] -> term
-  | zipper :: _ ->
-      let rewritten =
-        match reduce (Zipper.cursor zipper) with
-        | Some reduced -> reduced
-        | None -> failwith "can't happen"
-      in
-      Fmt.pr "%a -> %a@." Term.pp term Term.pp rewritten ;
-      rewrite_until_fixpoint rewritten
-
-let expression = add (float 1.0) (add (float 2.0) (mul (float 3.0) (float 4.0)))
-
-let normalized = rewrite_until_fixpoint expression
-
-(* Example: substitution *)
-
-(* Note that the domain of the substitution does not need to match the variables contained
-   in the term. *)
-let subst =
-  [(0, float 0.0); (1, neg (float 42.0)); (2, float 2.0)]
-  |> List.to_seq |> Subst.of_seq
-
-let () = assert (Option.equal Term.equal (Subst.get 0 subst) (Some (float 0.0)))
-
-let () = assert (Option.equal Term.equal (Subst.get 3 subst) None)
-
-let term = add (var 1) (mul (var 2) (var 2))
-
-let substituted = Subst.lift subst term
-
-let () = Fmt.pr "%a@." Term.pp substituted
-
-(* Example: unification *)
-
-let uf_state = Unification.empty ()
-
-let t1 = add (mul (float 1.0) (float 2.0)) (var 1)
-
-let t2 = add (var 2) (mul (float 3.0) (float 4.0))
-
-let () =
-  match Unification.unify t1 t2 uf_state with
-  | None -> failwith "unification failed"
-  | Some uf_state' ->
-      let subst = Unification.subst uf_state' in
-      Fmt.pr "%a@." Subst.pp subst
-
-let () = Fmt.pr "%a@." Subst.pp subst
-
 (* Example: indexing *)
+
+module Index = Term_indexing.Substitution_tree.Make (Prim) (TI.Term)
 
 let keys =
   [ float 42.0;

@@ -1,5 +1,5 @@
 (* This is a naive implementation of a term index used as a reference implementation. *)
-open Term_indexing
+open Term_tools
 
 module Make
     (P : Intf.Signature)

@@ -37,7 +37,7 @@ module Prim = struct
   let arity = function Add | Sub | Mul | Div -> 2 | Neg -> 1 | Float _ -> 0
 end
 
-module TI = Term_indexing.Make (Prim)
+module TI = Term_tools.Make (Prim)
 open TI
 open Term
 
@@ -65,6 +65,8 @@ let timeit f =
 [@@ocaml.inline]
 
 (* ---------------------------------------------------------------- *)
+
+module Index = Term_indexing.Substitution_tree.Make (Prim) (TI.Term)
 
 let rec iter_exhaustive depth k =
   if depth = 0 then k (float 0.0)

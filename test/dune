@@ -1,5 +1,5 @@
 (tests
- (names rewriting_test term_test subst_test index_test misc int_option_test zipper_test)
- (libraries term_indexing hashcons alcotest qcheck qcheck-core qcheck-alcotest containers fmt printbox printbox-text)
+ (names index_test misc)
+ (libraries term-tools term_indexing hashcons alcotest qcheck qcheck-core qcheck-alcotest containers fmt printbox printbox-text)
  (ocamlopt_flags (-w -58 -O3))
 )

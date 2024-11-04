@@ -1,4 +1,4 @@
-open Term_indexing
+open Term_tools
 
 module Prim = struct
   type t = Add | Sub | Mul | Div | Neg | Float of float
@@ -243,3 +243,5 @@ let subst_gen : Subst.t Gen.t =
   flatten_l (List.map term_gen domain) >|= fun l -> Subst.of_seq (List.to_seq l)
 
 let conv qctests = List.map QCheck_alcotest.to_alcotest qctests
+
+module Index = Term_indexing.Substitution_tree.Make (Prim) (Term)
