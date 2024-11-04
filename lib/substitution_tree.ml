@@ -94,10 +94,15 @@ end = struct
   end
 
   type 'a node =
-    { mutable head : Subst.t;
-      mutable subtrees : 'a node Vec.vector;
-      mutable data : 'a option
-    }
+    | Flat of { mutable head : Subst.t; mutable subtrees : 'a node Vec.vector }
+    | Leaf of { mutable head : Subst.t; mutable data : 'a }
+
+  let head = function Flat { head; _ } | Leaf { head; _ } -> head
+
+  let[@ocaml.inline always] set_head node head =
+    match node with
+    | Flat node -> node.head <- head
+    | Leaf node -> node.head <- head
 
   type 'a t =
     { nodes : 'a node Vec.vector;  (** [nodes] is the first layer of trees *)
@@ -146,9 +151,7 @@ end = struct
 
     let box_of_data pp_data data =
       let open PB in
-      match data with
-      | None -> text "<>"
-      | Some data -> text (Format.asprintf "%a" pp_data data)
+      text (Format.asprintf "%a" pp_data data)
 
     let box_of_subst subst =
       let open PB in
@@ -176,12 +179,15 @@ end = struct
 
     let rec to_box pp_data node =
       let open PB in
-      tree
-        ~indent:4
-        (hlist
-           [ box_of_subst_with_data pp_data node.head node.data;
-             text (string_of_int (Vec.length node.subtrees)) ])
-        (List.map (to_box pp_data) (Vec.to_list node.subtrees))
+      match node with
+      | Flat node ->
+          tree
+            ~indent:4
+            (hlist
+               [ box_of_subst node.head;
+                 text (string_of_int (Vec.length node.subtrees)) ])
+            (List.map (to_box pp_data) (Vec.to_list node.subtrees))
+      | Leaf node -> box_of_subst_with_data pp_data node.head node.data
 
     and box_of_subtrees pp_data vec =
       let open PB in
@@ -411,12 +417,11 @@ end = struct
       (* Postcondition: domain of [(Vec.get t i).head] is unset *)
       if i >= Vec.length t then (
         (* Format.printf "End of vector@." ; *)
-        Vec.push
-          t
-          { head = subst; subtrees = Vec.create (); data = Some (f None) } ;
+        Vec.push t (Leaf { head = subst; data = f None }) ;
         Subst.reset subst)
       else
-        let ({ head; subtrees; data = _ } as ti) = Vec.get t i in
+        let ti = Vec.get t i in
+        (* let ({ head; subtrees; data = _ } as ti) = Vec.get t i in *)
         let undo_frame = Scope.make () in
         let (general, partial_residual_subst, residual_node) =
           Subst.fold
@@ -449,7 +454,7 @@ end = struct
                 v.desc <- IVar ;
                 (Subst.push v t general, residual_subst, residual_node))
             (Subst.empty (), Subst.empty (), Subst.empty ())
-            head
+            (head ti)
         in
         (*
            At this point:
@@ -462,7 +467,8 @@ end = struct
           if debug_mode then (
             assert (
               Subst.for_all (fun v t -> is_ivar v && not (is_ivar t)) general) ;
-            assert (Subst.for_all (fun v t -> is_ivar v && not (is_ivar t)) head))
+            assert (
+              Subst.for_all (fun v t -> is_ivar v && not (is_ivar t)) (head ti)))
           else ()
         in
 
@@ -492,45 +498,47 @@ end = struct
             (* At this point:
                - [general] domain is unset, [head = general] and [subst = general] hence
                  post-condition is satisfied *)
-            ti.data <- Some (f ti.data)
+            match ti with
+            | Flat _ -> assert false
+            | Leaf node -> node.data <- f (Some node.data)
           else if Subst.is_empty residual_subst then (
             (* Here, [subst = general], [head = residual_node \circ general]
-               it follows that head refines [subst].
-            *)
-            ti.head <- general ;
-            ti.subtrees <-
-              Vec.of_array
-                [| { head = residual_node;
-                     subtrees = ti.subtrees;
-                     data = ti.data
-                   }
-                |] ;
-            ti.data <- None ;
-            Subst.reset residual_node)
+               it follows that [head] refines [subst]. *)
+            match ti with
+            | Flat _ -> assert false
+            | Leaf node ->
+                node.head <- residual_node ;
+                let new_node =
+                  Flat { head = general; subtrees = Vec.of_array [| ti |] }
+                in
+                Vec.set t i new_node ;
+                Subst.reset residual_node)
           else if Subst.is_empty residual_node then
             (* Here, [head = general], [subst = residual_subst \circ general]
-               it follows that [subst] refines [head].
-            *)
-
+               it follows that [subst] refines [head]. *)
             (* subst refines head *)
+            let subtrees =
+              match ti with
+              | Leaf node ->
+                  let subtrees = Vec.create () in
+                  let flat = Flat { head = node.head; subtrees } in
+                  Vec.set t i flat ;
+                  subtrees
+              | Flat node -> node.subtrees
+            in
             insert_aux residual_subst subtrees 0
           else (
             (* [subst] has a nontrivial mscg
                - we replace [head] by [general] ([general] generalizes [head])
                - we introduce a new node below the current one labelled by [residual_node]
                - next to the node labelled by [residual_node] we introduce a leaf labelled by [residual_subst] *)
-            ti.head <- residual_node ;
+            set_head ti residual_node ;
             let new_node_children =
               Vec.of_array
-                [| ti;
-                   { head = residual_subst;
-                     subtrees = Vec.create ();
-                     data = Some (f None)
-                   }
-                |]
+                [| ti; Leaf { head = residual_subst; data = f None } |]
             in
             let new_node =
-              { head = general; subtrees = new_node_children; data = None }
+              Flat { head = general; subtrees = new_node_children }
             in
             Vec.set t i new_node ;
             Subst.reset residual_node ;
@@ -543,17 +551,26 @@ end = struct
     [@@@ocaml.warning "-32"]
 
     let rec max_depth_node node =
-      1
-      + Vec.fold (fun acc node -> max acc (max_depth_node node)) 0 node.subtrees
+      match node with
+      | Leaf _ -> 1
+      | Flat node ->
+          1
+          + Vec.fold
+              (fun acc node -> max acc (max_depth_node node))
+              0
+              node.subtrees
 
     let max_depth index =
       Vec.fold (fun acc node -> max acc (max_depth_node node)) 0 index.nodes
 
     let rec max_width_node node =
-      Vec.fold
-        (fun acc node -> max acc (max_width_node node))
-        (Vec.length node.subtrees)
-        node.subtrees
+      match node with
+      | Leaf _ -> 0
+      | Flat node ->
+          Vec.fold
+            (fun acc node -> max acc (max_width_node node))
+            (Vec.length node.subtrees)
+            node.subtrees
 
     let max_width index =
       Vec.fold
@@ -574,8 +591,11 @@ end = struct
     exception Trivial_subst of subst
 
     let rec all_unset_node node =
-      Subst.for_all (fun v _ -> is_ivar v) node.head
-      && Vec.for_all all_unset_node node.subtrees
+      match node with
+      | Leaf node -> Subst.for_all (fun v _ -> is_ivar v) node.head
+      | Flat node ->
+          Subst.for_all (fun v _ -> is_ivar v) node.head
+          && Vec.for_all all_unset_node node.subtrees
 
     let all_unset (index : 'a t) : bool = Vec.for_all all_unset_node index.nodes
 
@@ -593,13 +613,16 @@ end = struct
             well_scoped_subst rest in_scope acc
 
     let rec well_scoped_node node in_scope =
-      let subst = node.head in
+      let subst = head node in
       let in_scope =
         well_scoped_subst (Subst.to_bindings subst) in_scope IS.empty
       in
       if not (non_trivial (Subst.to_bindings subst)) then
         raise (Trivial_subst subst) ;
-      Vec.iter (fun node -> well_scoped_node node in_scope) node.subtrees
+      match node with
+      | Leaf _ -> ()
+      | Flat node ->
+          Vec.iter (fun node -> well_scoped_node node in_scope) node.subtrees
 
     let well_scoped index =
       let in_scope = IS.singleton (uid index.root) in
@@ -883,10 +906,15 @@ end = struct
   end
 
   let rec iter_node f node (root : iterm) =
-    Subst.assign node.head ;
-    (match node.data with None -> () | Some data -> f root data) ;
-    Vec.iter (fun node -> iter_node f node root) node.subtrees ;
-    Subst.reset node.head
+    match node with
+    | Leaf node ->
+        Subst.assign node.head ;
+        f root node.data ;
+        Subst.reset node.head
+    | Flat node ->
+        Subst.assign node.head ;
+        Vec.iter (fun node -> iter_node f node root) node.subtrees ;
+        Subst.reset node.head
 
   let iter_transient f (index : 'a t) =
     Vec.iter (fun node -> iter_node f node index.root) index.nodes
@@ -905,13 +933,15 @@ end = struct
     Scope.undo_scope @@ fun scope ->
     let success =
       match qkind with
-      | Unifiable -> Unifiable_query.unification_subst scope node.head
-      | Specialize -> Specialize_query.check_specialize_subst scope node.head
-      | Generalize -> Generalize_query.check_generalize_subst scope node.head
+      | Unifiable -> Unifiable_query.unification_subst scope (head node)
+      | Specialize -> Specialize_query.check_specialize_subst scope (head node)
+      | Generalize -> Generalize_query.check_generalize_subst scope (head node)
     in
-    if success then (
-      (match node.data with None -> () | Some data -> f root data) ;
-      Vec.iter (fun node -> iter_query_node f node root qkind) node.subtrees)
+    if success then
+      match node with
+      | Leaf node -> f root node.data
+      | Flat node ->
+          Vec.iter (fun node -> iter_query_node f node root qkind) node.subtrees
     else ()
 
   let iter_query f (index : 'a t) (qkind : query_kind) (query : iterm) =
